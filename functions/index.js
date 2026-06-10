@@ -4,7 +4,7 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 
 exports.analyzePlant = onRequest(
-  { cors: true },
+  { cors: true, secrets: ["PLANTORA_OPENAI_KEY"] },
   async (req, res) => {
     res.set("Access-Control-Allow-Origin", "*");
     res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -25,22 +25,15 @@ exports.analyzePlant = onRequest(
         return res.status(400).json({ error: "Resim verisi bulunamadı." });
       }
 
-      // Extract raw base64 data and mime type
-      let base64Data = image;
-      let mimeType = "image/jpeg";
+      // Prepare the image payload for OpenAI (expects a data URL)
+      const dataUrl = image.startsWith("data:") ? image : `data:image/jpeg;base64,${image}`;
 
-      if (image.startsWith("data:")) {
-        const parts = image.split(",");
-        base64Data = parts[1];
-        const mimePart = parts[0].split(";")[0];
-        mimeType = mimePart.substring(5); // strip "data:"
+      const openAIKey = process.env.PLANTORA_OPENAI_KEY;
+      if (!openAIKey) {
+        throw new Error("PLANTORA_OPENAI_KEY environment variable is not configured.");
       }
 
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey) {
-        throw new Error("GEMINI_API_KEY environment variable is not configured.");
-      }
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const url = "https://api.openai.com/v1/chat/completions";
 
       const prompt = `
       Sana bir bitki fotoğrafı gönderiyorum. Lütfen bu bitkiyi analiz et.
@@ -55,47 +48,39 @@ exports.analyzePlant = onRequest(
       `;
 
       const payload = {
-        contents: [
+        model: "gpt-4o-mini",
+        messages: [
           {
-            parts: [
-              { text: prompt },
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
               {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data
+                type: "image_url",
+                image_url: {
+                  url: dataUrl
                 }
               }
             ]
           }
         ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              bitki: { type: "STRING" },
-              sağlık: { type: "INTEGER" },
-              sorun: { type: "STRING" },
-              yorum: { type: "STRING" },
-              öneri: { type: "STRING" }
-            },
-            required: ["bitki", "sağlık", "sorun", "yorum", "öneri"]
-          }
-        }
+        response_format: { type: "json_object" }
       };
 
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openAIKey}`
+        },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API returned status ${response.status}`);
+        throw new Error(`OpenAI API returned status ${response.status}`);
       }
 
       const resData = await response.json();
-      const textContent = resData.candidates[0].content.parts[0].text;
+      const textContent = resData.choices[0].message.content;
       const analysisResult = JSON.parse(textContent);
 
       // If userId and plantId are provided, save to Firestore
@@ -141,7 +126,7 @@ exports.analyzePlant = onRequest(
     } catch (error) {
       console.error("Error analyzing plant:", error);
       return res.status(200).json({
-        warning: `Gemini API Analiz Hatası (${error.message}), simüle veriye yönlendirildi.`,
+        warning: `OpenAI API Analiz Hatası (${error.message}), simüle veriye yönlendirildi.`,
         bitki: "Monstera",
         sağlık: 58,
         sorun: "Yaprak sararması (Aşırı sulama riski)",

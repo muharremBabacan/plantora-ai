@@ -38,10 +38,10 @@ def analyze_plant():
     if not allowed_file(file.filename):
         return jsonify({"error": "Yalnızca PNG, JPG ve JPEG formatları desteklenmektedir."}), 400
 
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
     
-    # --- PRODUCTION PATH (Google Gemini Vision API Entegrasyonu) ---
-    if gemini_key:
+    # --- PRODUCTION PATH (OpenAI GPT-4o-Mini API Entegrasyonu) ---
+    if openai_key:
         try:
             base64_image = encode_image(file)
             
@@ -63,42 +63,36 @@ def analyze_plant():
             }
             """
 
-            # Gemini REST payload
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            # OpenAI Chat Completions payload
+            url = "https://api.openai.com/v1/chat/completions"
+            data_url = f"data:{mime_type};base64,{base64_image}"
+            
             payload = {
-                "contents": [
+                "model": "gpt-4o-mini",
+                "messages": [
                     {
-                        "parts": [
-                            {"text": prompt},
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
                             {
-                                "inlineData": {
-                                    "mimeType": mime_type,
-                                    "data": base64_image
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": data_url
                                 }
                             }
                         ]
                     }
                 ],
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "responseSchema": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "bitki": {"type": "STRING"},
-                            "sağlık": {"type": "INTEGER"},
-                            "sorun": {"type": "STRING"},
-                            "yorum": {"type": "STRING"},
-                            "öneri": {"type": "STRING"}
-                        },
-                        "required": ["bitki", "sağlık", "sorun", "yorum", "öneri"]
-                    }
-                }
+                "response_format": {"type": "json_object"}
             }
 
             req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {openai_key}'
+                },
                 method='POST'
             )
 
@@ -110,9 +104,8 @@ def analyze_plant():
                 res_data = response.read().decode('utf-8')
                 res_json = json.loads(res_data)
                 
-                # Extract the text content from Gemini's response structures
-                candidate = res_json['candidates'][0]
-                text_content = candidate['content']['parts'][0]['text']
+                # Extract the text content from OpenAI response structure
+                text_content = res_json['choices'][0]['message']['content']
                 analysis_result = json.loads(text_content)
                 
                 return jsonify(analysis_result), 200
@@ -120,7 +113,7 @@ def analyze_plant():
         except Exception as e:
             # Fallback to mock if API call fails
             return jsonify({
-                "warning": f"Gemini API Analiz Hatası ({str(e)}), simüle veriye yönlendirildi.",
+                "warning": f"OpenAI API Analiz Hatası ({str(e)}), simüle veriye yönlendirildi.",
                 "bitki": "Monstera",
                 "sağlık": 58,
                 "sorun": "Yaprak sararması (Aşırı sulama riski)",

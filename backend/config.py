@@ -31,4 +31,5 @@ class Config:
     
     # AI Config
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
     GOOGLE_CLOUD_STORAGE_BUCKET = os.environ.get('GCS_BUCKET_NAME', 'plantora-ai-photos')
