@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plantora AI - Akıllı Bitki Bakım ve Sağlık Takip Asistanı</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  
+  <!-- PWA Manifest & Service Worker -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#15803D">
+  <!-- iOS PWA Standalone Support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Plantora">
+  
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('ServiceWorker registered', reg))
+          .catch(err => console.log('ServiceWorker failed', err));
+      });
+    }
+  </script>
+</head>
+<body>
+
+  <!-- Yasal Sözleşme Overlay (Disclaimer Modal) -->
+  <div class="disclaimer-overlay" id="disclaimer-overlay">
+    <div class="disclaimer-card">
+      <div class="disclaimer-header">
+        <span style="font-size: 2rem;">⚖️</span>
+        <h2>Plantora Sorumluluk Reddi</h2>
+      </div>
+      <div class="disclaimer-body">
+        <p><strong>Önemli Bilgilendirme:</strong> Plantora AI tarafından sağlanan tüm bitki sağlığı teşhisleri, bakım tavsiyeleri ve gübre/sulama hatırlatmaları yapay zeka analizlerine ve topluluk verilerine dayanmaktadır.</p>
+        
+        <p class="disclaimer-warning">⚠️ Bu uygulamadaki tüm analizler yalnızca tavsiye niteliğindedir. Bitkilerinizin nihai durum, bakım ve yaşam sorumluluğu tamamen kullanıcının (sizlerin) sorumluluğundadır.</p>
+        
+        <div class="disclaimer-details hidden" id="disclaimer-full-text">
+          <hr style="border-color: rgba(255,255,255,0.08); margin: 15px 0;">
+          <h4>Kullanıcı Sözleşmesi & Kullanım Koşulları</h4>
+          <p>1. Plantora AI, profesyonel tarımsal veya botanik danışmanlık hizmeti vermez. Gemini modellerinden üretilen sonuçlar hatalı teşhisler içerebilir.</p>
+          <p>2. Bitkilere uygulanan gübre, toprak veya su miktarlarından kaynaklanan kuruma, çürüme veya solma durumlarından Plantora AI veya geliştiricileri sorumlu tutulamaz.</p>
+          <p>3. Konum bilginiz, tarama istatistikleriniz ve bitki fotoğraflarınız tamamen anonim olarak hastalık haritaları ve topluluk verileri oluşturmak amacıyla saklanır.</p>
+          <p>4. Uygulamayı kullanmaya devam ederek bu şartları gayrikabili rücu kabul etmiş sayılırsınız.</p>
+        </div>
+
+        <button class="btn-read-more" id="btn-disclaimer-more">Detaylı Sözleşmeyi Oku ➔</button>
+      </div>
+      <div class="disclaimer-footer">
+        <button class="btn btn-primary" id="btn-disclaimer-accept">Sözleşmeyi Okudum, Kabul Ediyorum ✅</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background Orbs for Premium Glassmorphism Look -->
+  <div class="bg-orbs-container">
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+    <div class="glow-orb orb-3"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Mobile App Container -->
+    <div class="app-screen">
+      
+      <!-- App Header -->
+      <header class="app-header">
+        <div class="header-logo">
+          <span class="header-icon">🌿</span>
+          <h2>Plantora AI</h2>
+        </div>
+        <div class="connection-pill">Yapay Zeka Aktif</div>
+      </header>
+
+      <!-- Main App Views -->
+      <main class="app-content">
+
+        <!-- TAB 1: BAHÇEM (MY GARDEN) -->
+        <div id="view-garden" class="app-view active">
+          <div class="view-intro">
+            <h1>Merhaba, Bitki Dostu! 👋</h1>
+            <p>Bahçenizdeki bitkilerin genel durumunu buradan takip edebilirsiniz.</p>
+          </div>
+
+          <!-- Garden Health Card -->
+          <div class="garden-summary-card">
+            <div class="summary-details">
+              <h3>Genel Bahçe Sağlığı</h3>
+              <div class="summary-score" id="garden-health-score">-%</div>
+              <p id="garden-health-status">Henüz bitki eklenmedi</p>
+            </div>
+            <div class="summary-radial-progress">
+              <svg viewBox="0 0 36 36" class="circular-chart green">
+                <path class="circle-bg"
+                  d="M18 2.0845
+                    a 15.9155 15.9155 0 0 1 0 31.831
+                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path class="circle"
+                  id="garden-health-stroke"
+                  stroke-dasharray="0, 100"
+                  d="M18 2.0845
+                    a 15.9155 15.9155 0 0 1 0 31.831
+                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Plants Section -->
+          <div class="section-title-row">
+            <h3>Bitkilerim (<span id="plant-count">0</span>)</h3>
+          </div>
+
+          <div id="garden-list-empty" class="empty-state">
+            <div class="empty-icon">🪴</div>
+            <h4>Bahçeniz Henüz Boş</h4>
+            <p>Hemen aşağıdan kamera ikonuna basarak ilk bitkinizi taratın ve teşhis edin!</p>
+            <button class="btn btn-primary btn-sm" id="btn-empty-scan">Hemen Tara</button>
+          </div>
+
+          <div id="garden-grid" class="plant-grid hidden">
+            <!-- Dynamically populated plant cards -->
+          </div>
+        </div>
+
+        <!-- TAB 2: BİTKİ TARA (SCAN & DIAGNOSE) -->
+        <div id="view-scan" class="app-view">
+          <div class="view-intro">
+            <h1>Bitki Tanı ve Teşhis</h1>
+            <p>Fotoğraf yükleyerek bitki türünü bulun ve sağlık analizini yapın.</p>
+          </div>
+
+          <!-- Main Scanner UI Card -->
+          <div class="scanner-card">
+            
+            <!-- Upload Dropzone -->
+            <div class="upload-zone" id="upload-zone">
+              <div class="upload-icon">📸</div>
+              <h4>Fotoğraf Çekin veya Yükleyin</h4>
+              <p>Bitkinin yaprağını veya gövdesini net gösterecek şekilde yükleyin</p>
+              <span class="upload-btn">Dosya Seç</span>
+              <input type="file" id="file-input" accept="image/*" style="display: none;">
+            </div>
+
+            <!-- Preview Area with Scanning Laser -->
+            <div class="scan-preview-container hidden" id="scan-preview-container">
+              <img src="" alt="Taranan Bitki" id="scan-preview-img">
+              <div class="laser-scanner" id="laser-scanner"></div>
+              <div class="scan-status-overlay" id="scan-status-text">Analiz ediliyor...</div>
+            </div>
+
+            <!-- Simulation Quick Picker (MVP Feature) -->
+            <div class="quick-picker-section" id="quick-picker-section">
+              <h5>Analiz Edilecek Örnek Yapraklar:</h5>
+              <p class="picker-help">Gemini yapay zeka analiz motorunu denemek için aşağıdaki örnek bitkilerden birini seçin:</p>
+              
+              <div class="picker-grid">
+                <button class="picker-btn" data-preset="monstera">
+                  <div class="picker-thumb" style="background-image: url('/monstera.png')"></div>
+                  <span>Deve Tabanı (Sararma)</span>
+                </button>
+                <button class="picker-btn" data-preset="aloe">
+                  <div class="picker-thumb" style="background-image: url('/aloe.png')"></div>
+                  <span>Aloe Vera (Güneş Yanığı)</span>
+                </button>
+                <button class="picker-btn" data-preset="lily">
+                  <div class="picker-thumb" style="background-image: url('/lily.png')"></div>
+                  <span>Barış Çiçeği (Susuzluk)</span>
+                </button>
+                <button class="picker-btn" data-preset="ficus">
+                  <div class="picker-thumb" style="background-image: url('/ficus.png')"></div>
+                  <span>Keman Yapraklı İncir (Sağlıklı)</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Diagnosis Results Card (Hidden by Default) -->
+          <div class="result-card hidden" id="result-card">
+            <div class="result-header">
+              <span class="badge badge-success" id="result-badge-label">🌿 Gemini Vision Analizi</span>
+              <h3>Sağlık Raporu</h3>
+            </div>
+
+            <!-- Prominent Health Score -->
+            <div class="result-health-hero">
+              <span class="health-label">SAĞLIK SKORU</span>
+              <div class="health-score-large" id="result-health-score">82/100</div>
+              <div class="health-status-badge" id="result-health-badge">🟢 İyi Durumda</div>
+            </div>
+
+            <div class="result-report-details">
+              <div class="report-item">
+                <div class="report-item-title">📋 Tespit Edilen Durum</div>
+                <div class="report-item-value" id="result-status">Monstera Deliciosa</div>
+              </div>
+              
+              <div class="report-item">
+                <div class="report-item-title">💡 AI Yorumu</div>
+                <div class="report-item-value" id="result-comment">Yorum yükleniyor...</div>
+              </div>
+
+              <div class="report-item">
+                <div class="report-item-title">🛠 Önerilen Çözüm</div>
+                <div class="report-item-value" id="result-recommendation">Daha fazla güneş ışığı sağlayın.</div>
+              </div>
+            </div>
+
+            <!-- Inline Nickname Form (replaces prompt popup) -->
+            <div class="nickname-form-wrapper" id="nickname-form-wrapper">
+              <label for="nickname-input" class="nickname-label">🏷️ Bitkinize İsim Verin</label>
+              <div class="nickname-input-container">
+                <input type="text" id="nickname-input" class="nickname-input" placeholder="Örn: Salon Çiçeğim" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="result-actions">
+              <button class="btn btn-secondary" id="btn-re-scan">Tekrar Tara</button>
+              <button class="btn btn-primary" id="btn-add-to-garden">Bahçeme Ekle 🌿</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: TAKVİM (CALENDAR & TASKS) -->
+        <div id="view-calendar" class="app-view">
+          <div class="view-intro">
+            <h1>Bakım Takvimi</h1>
+            <p>Bitkilerinizin günlük bakım ihtiyaçlarını buradan görebilir ve onaylayabilirsiniz.</p>
+          </div>
+
+          <div class="calendar-list-container">
+            <div class="section-title-row">
+              <h3>Yapılması Gerekenler</h3>
+            </div>
+
+            <div id="calendar-empty" class="empty-state">
+              <div class="empty-icon">📅</div>
+              <h4>Bugünlük Görev Yok</h4>
+              <p>Harika! Bahçenizdeki tüm bitkilerin bakımları güncel görünüyor.</p>
+            </div>
+
+            <div id="calendar-list" class="task-list hidden">
+              <!-- Dynamically populated task rows -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: AYARLAR (SETTINGS & PROFILE) -->
+        <div id="view-settings" class="app-view">
+          <div class="view-intro">
+            <h1>Kullanıcı Ayarları</h1>
+            <p>Profilinizi özelleştirin, bildirim tercihlerinizi ve avatarınızı güncelleyin.</p>
+          </div>
+
+          <!-- Profile Header with Current Avatar -->
+          <div class="settings-profile-header">
+            <div class="profile-avatar-circle" id="current-profile-avatar">
+              <span class="avatar-placeholder">👤</span>
+            </div>
+            <div class="profile-text">
+              <h3 id="profile-display-name">Misafir Kullanıcı</h3>
+              <span id="profile-display-role">Plantora Yetiştiricisi</span>
+            </div>
+          </div>
+
+          <!-- Avatar Picker Section -->
+          <div class="settings-card">
+            <h3>🎭 Profil Avatarı Seçin</h3>
+            <p class="section-desc">Bahçenizi temsil edecek bir bitki çizimi veya bahçıvan silüeti seçin:</p>
+            
+            <h5 class="avatar-group-title">🌱 Bitki Çizimleri</h5>
+            <div class="avatar-picker-grid" id="plant-avatars-grid">
+              <!-- JS will inject 6 Plant SVG buttons -->
+            </div>
+
+            <h5 class="avatar-group-title" style="margin-top: 15px;">🧑‍🌾 Bahçıvan Silüetleri</h5>
+            <div class="avatar-picker-grid" id="gardener-avatars-grid">
+              <!-- JS will inject 6 Gardener SVG buttons -->
+            </div>
+          </div>
+
+          <!-- Profile Form Section -->
+          <div class="settings-card">
+            <h3>👤 Kişisel Bilgiler</h3>
+            
+            <div class="form-field">
+              <label for="settings-name-input">İsim Soyisim</label>
+              <input type="text" id="settings-name-input" placeholder="Adınızı girin">
+            </div>
+
+            <div class="form-field">
+              <label for="settings-email-input">E-Posta Adresi</label>
+              <input type="email" id="settings-email-input" placeholder="E-posta adresinizi girin">
+            </div>
+
+            <div class="form-field">
+              <label for="settings-phone-input">Telefon Numarası</label>
+              <input type="tel" id="settings-phone-input" placeholder="Örn: 0555-000-0000">
+            </div>
+          </div>
+
+          <!-- Notification Toggles Section -->
+          <div class="settings-card">
+            <h3>🔔 Uyarı Bildirimleri</h3>
+            <p class="section-desc">Bitki alarmları ve bakımları için kanalları yapılandırın:</p>
+
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <span class="toggle-title">E-Posta Uyarısı</span>
+                <span class="toggle-subtitle">E-posta ile sulama ve gübreleme zamanlarını bildir.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="settings-toggle-email" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top: 15px;">
+              <div class="toggle-text">
+                <span class="toggle-title">SMS Uyarısı</span>
+                <span class="toggle-subtitle">Telefonunuza SMS uyarısı gönderin.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="settings-toggle-sms">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="btn-save-settings" style="margin-top: 5px;">Ayarları Kaydet 💾</button>
+        </div>
+
+      </main>
+
+      <!-- PLANT DETAIL OVERLAY (Hidden by Default) -->
+      <div class="plant-detail-overlay" id="plant-detail-overlay">
+        <header class="detail-header">
+          <button class="btn-back" id="btn-detail-back">
+            <svg viewBox="0 0 24 24" width="24" height="24">
+              <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+            </svg>
+          </button>
+          <h2 id="detail-nickname">Takma Ad</h2>
+          <div style="width: 24px;"></div> <!-- Spacer to center title -->
+        </header>
+
+        <div class="detail-content">
+          <!-- Image & Health Score Circle -->
+          <div class="detail-hero">
+            <div class="detail-carousel-container" id="detail-carousel-container">
+              <div class="detail-carousel-wrapper" id="detail-carousel-wrapper">
+                <!-- Dynamically populated slides -->
+              </div>
+              <button class="carousel-nav prev-btn" id="btn-carousel-prev" aria-label="Önceki Fotoğraf">◀</button>
+              <button class="carousel-nav next-btn" id="btn-carousel-next" aria-label="Sonraki Fotoğraf">▶</button>
+              <div class="carousel-dots" id="detail-carousel-dots"></div>
+            </div>
+            
+            <div class="detail-health-badge" id="detail-health-badge-container">
+              <div class="detail-score-num" id="detail-health-score">--</div>
+              <div class="detail-score-label">SAĞLIK</div>
+            </div>
+          </div>
+
+          <!-- Alarm Controls Card -->
+          <div class="detail-card alarm-settings-card">
+            <h3>🚨 Bitki Alarm Sistemi</h3>
+            <p class="section-desc" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px;">Bu bitkinin sağlık veya sulama uyarısı vermesini kontrol edin.</p>
+
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <span class="toggle-title" style="font-size: 0.8rem; font-weight:600; text-align: left; display: block;">Bitki Alarmını Aç</span>
+                <span class="toggle-subtitle" style="font-size: 0.65rem; color: var(--text-muted); text-align: left; display: block;">Zamanı geçtiğinde kart yanıp sönsün.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="detail-toggle-alarm" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top: 10px;">
+              <div class="toggle-text">
+                <span class="toggle-title" style="font-size: 0.8rem; font-weight:600; text-align: left; display: block;">Uyarı Bildirimleri</span>
+                <span class="toggle-subtitle" style="font-size: 0.65rem; color: var(--text-muted); text-align: left; display: block;">E-posta veya SMS uyarısı gönder.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="detail-toggle-notifications" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- General specs -->
+          <div class="detail-card">
+            <h3>🌿 Bitki Bilgileri</h3>
+            <div class="detail-info-grid">
+              <div class="info-row">
+                <span class="label">Tür</span>
+                <span class="value" id="detail-species">Monstera</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Ekleme Tarihi</span>
+                <span class="value" id="detail-added-date">10 Haziran 2026</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Son Analiz Tarihi</span>
+                <span class="value" id="detail-last-analysis">Bugün</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selected Report details -->
+          <div class="detail-card report-card-theme">
+            <div class="report-stamp" id="detail-report-stamp">Gemini Raporu</div>
+            <h3>📋 Teşhis ve AI Tavsiyeleri</h3>
+            
+            <div class="report-details-group">
+              <div class="report-block">
+                <div class="block-title">📋 Tespit Edilen Durum</div>
+                <div class="block-text" id="detail-report-status">...</div>
+              </div>
+              
+              <div class="report-block">
+                <div class="block-title">💡 AI Yorumu</div>
+                <div class="block-text" id="detail-report-comment">...</div>
+              </div>
+              
+              <div class="report-block">
+                <div class="block-title">🛠 Önerilen Çözüm</div>
+                <div class="block-text" id="detail-report-recommendation">...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Analysis History list (Timeline) -->
+          <div class="detail-card">
+            <h3>📅 Analiz Geçmişi</h3>
+            <p class="timeline-help">Eski analiz raporlarını görüntülemek için kayıtlara tıklayın:</p>
+            <div class="timeline-container" id="detail-timeline">
+              <!-- Dynamically populated timeline nodes -->
+            </div>
+          </div>
+
+          <!-- Re-scan current plant button -->
+          <button class="btn btn-primary" id="btn-detail-rescan" style="margin-top: 10px;">
+            📸 Yeniden Fotoğraf Tara
+          </button>
+        </div>
+      </div>
+
+      <!-- App Bottom Navigation Tab Bar -->
+      <nav class="app-nav">
+        <button class="nav-item active" data-target="view-garden">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24">
+            <path fill="currentColor" d="M12 3L4 9v12h5v-7h6v7h5V9z"/>
+          </svg>
+          <span>Bahçem</span>
+        </button>
+        
+        <button class="nav-item nav-scanner-btn" data-target="view-scan">
+          <div class="nav-scanner-circle">
+            <svg class="nav-icon" viewBox="0 0 24 24" width="28" height="28" style="color: white; margin: 0;">
+              <path fill="currentColor" d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+            </svg>
+          </div>
+          <span>Tara</span>
+        </button>
+
+        <button class="nav-item" data-target="view-calendar">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24">
+            <path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+          </svg>
+          <span>Takvim</span>
+        </button>
+
+        <button class="nav-item" data-target="view-settings" id="nav-btn-settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24">
+            <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+          <span>Ayarlar</span>
+        </button>
+      </nav>
+
+      <!-- Custom Premium Notification Toast -->
+      <div class="app-toast" id="app-toast">
+        <div class="toast-icon" id="toast-icon">🌿</div>
+        <div class="toast-content">
+          <div class="toast-title" id="toast-title">Başarılı</div>
+          <div class="toast-message" id="toast-message">İşlem başarıyla gerçekleştirildi.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

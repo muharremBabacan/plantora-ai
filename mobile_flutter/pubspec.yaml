@@ -1,0 +1,39 @@
+name: plantora_ai
+description: Plantora AI - Akıllı Bitki Bakım ve Hastalık Analiz Asistanı (MVP Scaffold)
+version: 1.0.0+1
+
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.1
+
+  # Network & API connection
+  http: ^1.2.1
+
+  # Camera / Gallery access
+  image_picker: ^1.0.7
+
+  # Firebase Core and SDK
+  firebase_core: ^2.27.0
+  cloud_firestore: ^4.15.8
+  firebase_auth: ^4.17.8
+
+  # Biometrics
+  local_auth: ^2.1.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/

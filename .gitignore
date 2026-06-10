@@ -1,0 +1,49 @@
+# Prototype (Node / Vite)
+prototype/node_modules/
+prototype/dist/
+prototype/.env
+prototype/npm-debug.log*
+prototype/yarn-debug.log*
+prototype/yarn-error.log*
+
+# Backend (Python / Flask)
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.venv/
+backend/venv/
+backend/env/
+backend/.env
+backend/instance/
+backend/.pytest_cache/
+backend/*.db
+
+# Mobile (Flutter / Dart)
+mobile_flutter/.dart_tool/
+mobile_flutter/.flutter-plugins
+mobile_flutter/.flutter-plugins-dependencies
+mobile_flutter/.packages
+mobile_flutter/build/
+mobile_flutter/ios/.symlinks/
+mobile_flutter/ios/Pods/
+mobile_flutter/.pub-cache/
+mobile_flutter/.pub/
+mobile_flutter/local.properties
+mobile_flutter/*.lock
+mobile_flutter/**/*.g.dart
+
+# IDEs & System Files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Firebase Functions
+functions/node_modules/
+functions/.env
