@@ -280,6 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupSettingsActions();
   setupDisclaimerActions();
   setupDeviceSync();
+  setupFontSizeSelector();
   
   // Fetch geolocation then check auth state or authenticate anonymously
   fetchUserLocation().then(() => {
@@ -693,6 +694,37 @@ function setupDeviceSync() {
       });
     });
   }
+}
+
+function setupFontSizeSelector() {
+  const sizeButtons = document.querySelectorAll(".font-size-btn");
+  
+  // Load saved font size on startup
+  const savedSize = localStorage.getItem("app_font_size") || "medium";
+  applyFontSize(savedSize);
+
+  sizeButtons.forEach(btn => {
+    const size = btn.getAttribute("data-size");
+    if (size === savedSize) {
+      sizeButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+
+    btn.addEventListener("click", () => {
+      const targetSize = btn.getAttribute("data-size") || "medium";
+      applyFontSize(targetSize);
+      
+      sizeButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+}
+
+function applyFontSize(size: string) {
+  const htmlEl = document.documentElement;
+  htmlEl.classList.remove("font-size-small", "font-size-medium", "font-size-large");
+  htmlEl.classList.add(`font-size-${size}`);
+  localStorage.setItem("app_font_size", size);
 }
 
 function setupDisclaimerActions() {
