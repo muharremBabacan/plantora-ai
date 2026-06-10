@@ -48,14 +48,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Determine if this is a navigation request (like loading index.html or root /)
+  let requestToFetch = event.request;
+  if (event.request.mode === 'navigate') {
+    try {
+      // Force bypassing the browser's HTTP cache for HTML pages
+      requestToFetch = new Request(event.request, { cache: 'no-cache' });
+    } catch (e) {
+      console.warn('Could not construct Request with cache: no-cache, using original request', e);
+    }
+  }
+
   // Network-First Strategy: Try network, fallback to cache
   event.respondWith(
-    fetch(event.request)
+    fetch(requestToFetch)
       .then((response) => {
         // If response is valid, clone and update cache
         if (event.request.method === 'GET' && response.status === 200) {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
+            // Cache under the original request representation
             cache.put(event.request, responseToCache);
           });
         }
