@@ -343,50 +343,50 @@ document.addEventListener("DOMContentLoaded", () => {
   setupFontSizeSelector();
   setupThemeSelector();
   
-  // Fetch geolocation then check auth state or authenticate anonymously
-  fetchUserLocation().then(() => {
-    // Standard Firebase Auth state observer to prevent overriding existing logged in user
-    auth.onAuthStateChanged((user: any) => {
-      if (user) {
-        // Use paired user ID if it exists in localStorage, otherwise use authenticated user's UID
-        const savedPairedId = localStorage.getItem("paired_user_id");
-        const targetUserId = savedPairedId || user.uid;
+  // Fetch geolocation in the background (non-blocking)
+  fetchUserLocation();
 
-        // Check if we have a temporary anonymous account to merge
-        const oldAnonUid = localStorage.getItem("old_anon_uid");
-        if (oldAnonUid && oldAnonUid !== targetUserId) {
-          localStorage.removeItem("old_anon_uid");
-          showToast("Bahçeler Birleştiriliyor... 🔄", "Misafir verileriniz hesabınıza taşınıyor.", "warning");
-          
-          mergeAndDestroyUser(oldAnonUid, targetUserId).then(() => {
-            currentUserId = targetUserId;
-            saveUserRecord(currentUserId);
-            loadUserSettings(currentUserId);
-            listenToGarden(currentUserId);
-            showToast("Veriler Birleştirildi! 🎉", "Tüm bitki geçmişiniz başarıyla aktarıldı.", "success");
-          }).catch((err: any) => {
-            console.error("Merge failed:", err);
-            // Fallback to loading target user settings anyway
-            currentUserId = targetUserId;
-            saveUserRecord(currentUserId);
-            loadUserSettings(currentUserId);
-            listenToGarden(currentUserId);
-          });
-        } else {
+  // Register Auth Observer IMMEDIATELY on startup
+  auth.onAuthStateChanged((user: any) => {
+    if (user) {
+      // Use paired user ID if it exists in localStorage, otherwise use authenticated user's UID
+      const savedPairedId = localStorage.getItem("paired_user_id");
+      const targetUserId = savedPairedId || user.uid;
+
+      // Check if we have a temporary anonymous account to merge
+      const oldAnonUid = localStorage.getItem("old_anon_uid");
+      if (oldAnonUid && oldAnonUid !== targetUserId) {
+        localStorage.removeItem("old_anon_uid");
+        showToast("Bahçeler Birleştiriliyor... 🔄", "Misafir verileriniz hesabınıza taşınıyor.", "warning");
+        
+        mergeAndDestroyUser(oldAnonUid, targetUserId).then(() => {
           currentUserId = targetUserId;
           saveUserRecord(currentUserId);
           loadUserSettings(currentUserId);
           listenToGarden(currentUserId);
-        }
-      } else {
-        // If not authenticated at all, sign in anonymously
-        auth.signInAnonymously().catch((err: any) => {
-          console.error("Auth error:", err);
+          showToast("Veriler Birleştirildi! 🎉", "Tüm bitki geçmişiniz başarıyla aktarıldı.", "success");
+        }).catch((err: any) => {
+          console.error("Merge failed:", err);
+          // Fallback to loading target user settings anyway
+          currentUserId = targetUserId;
+          saveUserRecord(currentUserId);
           loadUserSettings(currentUserId);
           listenToGarden(currentUserId);
         });
+      } else {
+        currentUserId = targetUserId;
+        saveUserRecord(currentUserId);
+        loadUserSettings(currentUserId);
+        listenToGarden(currentUserId);
       }
-    });
+    } else {
+      // If not authenticated at all, sign in anonymously
+      auth.signInAnonymously().catch((err: any) => {
+        console.error("Auth error:", err);
+        loadUserSettings(currentUserId);
+        listenToGarden(currentUserId);
+      });
+    }
   });
 });
 
@@ -1597,6 +1597,9 @@ function setupUploadAndScanner() {
     if (uploadedPhotos.length === 0) return;
     const imgSrc = uploadedPhotos[activePhotoIndex].full;
 
+    const scannerCircle = document.querySelector(".nav-scanner-circle");
+    if (scannerCircle) scannerCircle.classList.add("analyzing");
+
     uploadZone.classList.add("hidden");
     resultCard.classList.add("hidden");
     quickPicker.classList.add("hidden");
@@ -1648,6 +1651,7 @@ function setupUploadAndScanner() {
 
       setTimeout(() => {
         clearInterval(statusInterval);
+        if (scannerCircle) scannerCircle.classList.remove("analyzing");
         previewContainer.classList.add("hidden");
 
         activeScanTarget = {
@@ -1681,6 +1685,7 @@ function setupUploadAndScanner() {
 
       setTimeout(() => {
         clearInterval(statusInterval);
+        if (scannerCircle) scannerCircle.classList.remove("analyzing");
         previewContainer.classList.add("hidden");
 
         activeScanTarget = {
@@ -1707,6 +1712,9 @@ function setupUploadAndScanner() {
 
   // Action for scanning local presets
   function triggerScanning(imgSrc: string, preset: typeof PRESET_PLANTS[keyof typeof PRESET_PLANTS]) {
+    const scannerCircle = document.querySelector(".nav-scanner-circle");
+    if (scannerCircle) scannerCircle.classList.add("analyzing");
+
     uploadZone.classList.add("hidden");
     resultCard.classList.add("hidden");
     quickPicker.classList.add("hidden");
@@ -1733,6 +1741,7 @@ function setupUploadAndScanner() {
 
     setTimeout(() => {
       clearInterval(statusInterval);
+      if (scannerCircle) scannerCircle.classList.remove("analyzing");
       previewContainer.classList.add("hidden");
       
       activeScanTarget = {
