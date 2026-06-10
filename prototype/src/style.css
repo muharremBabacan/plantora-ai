@@ -2262,6 +2262,11 @@ html.font-size-large {
   font-size: 18px !important;
 }
 
+/* Hide Simulation Quick Picker */
+#quick-picker-section {
+  display: none !important;
+}
+
 
 
 
