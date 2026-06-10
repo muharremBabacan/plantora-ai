@@ -353,7 +353,7 @@ function cancelRescanState() {
   activeRescanPlantId = null;
   const badgeLabel = document.getElementById("result-badge-label");
   const addToGardenBtn = document.getElementById("btn-add-to-garden");
-  if (badgeLabel) badgeLabel.textContent = "🌿 Gemini Vision Analizi";
+  if (badgeLabel) badgeLabel.textContent = "🌿 Plantora AI Analizi";
   if (addToGardenBtn) addToGardenBtn.innerHTML = "Bahçeme Ekle 🌿";
 }
 
@@ -695,7 +695,7 @@ function setupUploadAndScanner() {
     const statuses = [
       "Görsel yükleniyor...",
       "Canlı sunucuya gönderiliyor...",
-      "Gemini Vision modelleri çalıştırılıyor...",
+      "Plantora AI modelleri çalıştırılıyor...",
       "Rapor şeması çözümleniyor..."
     ];
 
@@ -753,7 +753,7 @@ function setupUploadAndScanner() {
           activeScanTarget!.sorun, 
           activeScanTarget!.yorum, 
           activeScanTarget!.öneri, 
-          "Gemini Vision Canlı Analiz"
+          "Plantora AI Canlı Analiz"
         );
       }, delay);
     })
@@ -838,7 +838,7 @@ function setupUploadAndScanner() {
         preset.sorun, 
         preset.yorum, 
         preset.öneri, 
-        "Gemini Vision Analizi"
+        "Plantora AI Analizi"
       );
     }, 2000);
   }
