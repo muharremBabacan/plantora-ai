@@ -1186,6 +1186,44 @@ function setupGoogleAuth() {
     updateUI();
   });
 
+  // Handle redirect result (crucial for mobile Safari/Chrome where popup is blocked)
+  auth.getRedirectResult().then((result: any) => {
+    if (result && result.user) {
+      showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
+      localStorage.removeItem("paired_user_id");
+      updateUI();
+    }
+  }).catch((err: any) => {
+    console.error("Google redirect login failed:", err);
+    localStorage.removeItem("old_anon_uid");
+    handleAuthError(err);
+  });
+
+  // Helper to handle descriptive error messages
+  const handleAuthError = (err: any) => {
+    if (err.code === "auth/unauthorized-domain") {
+      showToast(
+        "Yetkisiz Alan Adı 🚨",
+        "Bu alan adı Firebase Console > Authentication > Ayarlar > Yetkilendirilmiş Alan Adları kısmına eklenmelidir.",
+        "danger"
+      );
+    } else if (err.code === "auth/operation-not-allowed") {
+      showToast(
+        "Google Girişi Etkin Değil 🚨",
+        "Firebase Console > Authentication > Sign-in method kısmından Google sağlayıcısını etkinleştirmeniz gerekiyor.",
+        "danger"
+      );
+    } else if (err.code === "auth/popup-blocked") {
+      showToast(
+        "Pop-up Engellendi 🚨",
+        "Tarayıcınızın pop-up engelleyicisini kapatın veya redirect modunu deneyin.",
+        "danger"
+      );
+    } else {
+      showToast("Hata 🚨", "Google girişi başarısız oldu: " + err.message, "danger");
+    }
+  };
+
   if (googleBtn) {
     googleBtn.addEventListener("click", () => {
       const currentUser = auth.currentUser;
@@ -1198,29 +1236,48 @@ function setupGoogleAuth() {
       googleBtn.disabled = true;
       googleBtn.innerText = "Giriş Yapılıyor... ⏳";
 
-      auth.signInWithPopup(provider).then(() => {
-        showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = `
-          <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
-            <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
-          </svg>
-          Google ile Giriş Yap / Bağla
-        `;
-        localStorage.removeItem("paired_user_id");
-        updateUI();
-      }).catch((err: any) => {
-        console.error("Google login failed:", err);
-        localStorage.removeItem("old_anon_uid");
-        googleBtn.disabled = false;
-        googleBtn.innerHTML = `
-          <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
-            <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
-          </svg>
-          Google ile Giriş Yap / Bağla
-        `;
-        showToast("Hata 🚨", "Google girişi başarısız oldu: " + err.message, "danger");
-      });
+      // Check if mobile (popups are unreliable or blocked on mobile Safari/in-app browsers)
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isMobile) {
+        auth.signInWithRedirect(provider).catch((err: any) => {
+          console.error("Google redirect failed:", err);
+          localStorage.removeItem("old_anon_uid");
+          googleBtn.disabled = false;
+          googleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+              <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+            </svg>
+            Google ile Giriş Yap / Bağla
+          `;
+          handleAuthError(err);
+        });
+      } else {
+        auth.signInWithPopup(provider).then(() => {
+          showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
+          googleBtn.disabled = false;
+          googleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+              <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+            </svg>
+            Google ile Giriş Yap / Bağla
+          `;
+          localStorage.removeItem("paired_user_id");
+          updateUI();
+        }).catch((err: any) => {
+          console.error("Google login failed:", err);
+          localStorage.removeItem("old_anon_uid");
+          googleBtn.disabled = false;
+          googleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+              <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+            </svg>
+            Google ile Giriş Yap / Bağla
+          `;
+          handleAuthError(err);
+        });
+      }
     });
   }
 
