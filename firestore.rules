@@ -4,23 +4,24 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
 
     match /users/{userId} {
-      allow get, write: if isOwner(userId);
+      allow read, write: if isSignedIn();
       
       match /plants/{plantId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isSignedIn();
         
         match /reports/{reportId} {
-          allow read, write: if isOwner(userId);
+          allow read, write: if isSignedIn();
         }
         match /schedules/{scheduleId} {
-          allow read, write: if isOwner(userId);
+          allow read, write: if isSignedIn();
         }
       }
+    }
+
+    match /pairings/{code} {
+      allow read, write: if isSignedIn();
     }
 
     match /analyses_archive/{analysisId} {

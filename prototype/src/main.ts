@@ -287,7 +287,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Standard Firebase Auth state observer to prevent overriding existing logged in user
     auth.onAuthStateChanged((user: any) => {
       if (user) {
-        currentUserId = user.uid;
+        // Use paired user ID if it exists in localStorage, otherwise use authenticated user's UID
+        const savedPairedId = localStorage.getItem("paired_user_id");
+        currentUserId = savedPairedId || user.uid;
+
         saveUserRecord(currentUserId);
         loadUserSettings(currentUserId);
         listenToGarden(currentUserId);
@@ -612,6 +615,19 @@ function setupDeviceSync() {
   const syncInput = document.getElementById("sync-input-code") as HTMLInputElement;
   const codeDisplay = document.getElementById("sync-code-display") as HTMLDivElement;
   const codeVal = document.getElementById("sync-code-val") as HTMLDivElement;
+  const disconnectBtn = document.getElementById("btn-disconnect-sync") as HTMLButtonElement;
+
+  // Initialize Disconnect Button state
+  const checkDisconnectState = () => {
+    if (disconnectBtn) {
+      if (localStorage.getItem("paired_user_id")) {
+        disconnectBtn.classList.remove("hidden");
+      } else {
+        disconnectBtn.classList.add("hidden");
+      }
+    }
+  };
+  checkDisconnectState();
 
   if (generateBtn) {
     generateBtn.addEventListener("click", () => {
@@ -626,25 +642,22 @@ function setupDeviceSync() {
 
       // Generate random 6-digit code
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const email = `pair_${code}@plantora.ai`;
-      const password = `plantora_pair_${code}`;
 
-      // Link current anonymous account with this email/password credential
-      const credential = firebase.auth.EmailAuthProvider.credential(email, password);
-      currentUser.linkWithCredential(credential).then(() => {
+      // Write pairing document to public pairings collection
+      db.collection("pairings").doc(code).set({
+        uid: currentUserId,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(() => {
         if (codeVal) codeVal.textContent = code;
         if (codeDisplay) codeDisplay.classList.remove("hidden");
-        generateBtn.innerText = "Yeni Eşleşme Kodu Üretildi ✅";
-        showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan veya diğer cihazınızdan bu kodu girerek bağlanabilirsiniz.", "success");
-      }).catch((err: any) => {
-        console.error("Account linking failed:", err);
         generateBtn.disabled = false;
         generateBtn.innerText = "Eşleşme Kodu Üret 🔑";
-        if (err.code === "auth/email-already-in-use" || err.code === "auth/credential-already-in-use") {
-          showToast("Hata 🚨", "Bu hesap zaten başka bir cihazla eşleştirilmiş veya çakışma oluştu. Lütfen tekrar deneyin.", "danger");
-        } else {
-          showToast("Bağlantı Hatası 🚨", "Eşleşme kodu oluşturulamadı: " + err.message, "danger");
-        }
+        showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan bu kodu girerek bağlanabilirsiniz.", "success");
+      }).catch((err: any) => {
+        console.error("Firestore pairing write failed:", err);
+        generateBtn.disabled = false;
+        generateBtn.innerText = "Eşleşme Kodu Üret 🔑";
+        showToast("Hata 🚨", "Eşleşme kodu oluşturulamadı: " + err.message, "danger");
       });
     });
   }
@@ -661,37 +674,58 @@ function setupDeviceSync() {
       submitBtn.disabled = true;
       submitBtn.innerText = "Bağlanıyor... ⏳";
 
-      const email = `pair_${code}@plantora.ai`;
-      const password = `plantora_pair_${code}`;
+      // Read from pairings collection
+      db.collection("pairings").doc(code).get().then((doc: any) => {
+        if (doc.exists) {
+          const data = doc.data();
+          const targetUid = data.uid;
 
-      // Sign in with the paired email/password credentials
-      auth.signInWithEmailAndPassword(email, password).then((cred: any) => {
-        if (cred.user) {
-          currentUserId = cred.user.uid;
-          
+          // Save paired UID locally
+          localStorage.setItem("paired_user_id", targetUid);
+          currentUserId = targetUid;
+
+          // Reload application data for this user ID
+          loadUserSettings(currentUserId);
+          listenToGarden(currentUserId);
+
           showToast("Bağlantı Başarılı! 🌿", "Diğer cihazdaki bahçe verileri yüklendi.", "success");
 
           // Reset inputs and buttons
           syncInput.value = "";
           submitBtn.disabled = false;
           submitBtn.innerText = "Bağlan ➔";
+          checkDisconnectState();
 
           // Switch tab view to Garden tab
           const gardenTabBtn = document.querySelector('[data-target="view-garden"]') as HTMLButtonElement;
           if (gardenTabBtn) {
             gardenTabBtn.click();
           }
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Bağlan ➔";
+          showToast("Başarısız ⚠️", "Geçersiz veya süresi dolmuş eşleşme kodu!", "danger");
         }
       }).catch((err: any) => {
-        console.error("Sign in pairing error:", err);
+        console.error("Firestore pairing read error:", err);
         submitBtn.disabled = false;
         submitBtn.innerText = "Bağlan ➔";
-        if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
-          showToast("Başarısız ⚠️", "Geçersiz veya süresi dolmuş eşleşme kodu!", "danger");
-        } else {
-          showToast("Hata 🚨", "Bağlantı kurulamadı: " + err.message, "danger");
-        }
+        showToast("Hata 🚨", "Bağlantı kurulamadı: " + err.message, "danger");
       });
+    });
+  }
+
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener("click", () => {
+      localStorage.removeItem("paired_user_id");
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        currentUserId = currentUser.uid;
+        loadUserSettings(currentUserId);
+        listenToGarden(currentUserId);
+      }
+      checkDisconnectState();
+      showToast("Bağlantı Kesildi ❌", "Kendi yerel cihaz bahçenize geri döndünüz.", "success");
     });
   }
 }
