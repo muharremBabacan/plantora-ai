@@ -221,6 +221,7 @@ body {
 .app-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 20px;
   display: flex;
@@ -1080,7 +1081,7 @@ body {
 /* ==========================================================================
    PWA STANDALONE DISPLAY MODE OVERRIDES
    ========================================================================== */
-@media (display-mode: standalone) {
+@media (display-mode: standalone) and (max-width: 768px) {
   html, body {
     height: 100dvh;
     height: 100vh;
