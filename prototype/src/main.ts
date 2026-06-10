@@ -265,6 +265,13 @@ function getFormattedDate(): string {
 // DOM ELEMENTS & EVENT BINDINGS
 // ==========================================================================
 document.addEventListener("DOMContentLoaded", () => {
+  // Synchronously hide disclaimer overlay if already accepted in local storage
+  const localAccepted = localStorage.getItem("hasAcceptedTerms");
+  if (localAccepted === "true") {
+    const disclaimer = document.getElementById("disclaimer-overlay");
+    if (disclaimer) disclaimer.classList.add("hidden");
+  }
+
   setupTime();
   setupNavigation();
   setupUploadAndScanner();
@@ -304,6 +311,40 @@ function setupTime() {
   setInterval(update, 60000);
 }
 
+// Cancel Re-scan State helper
+function cancelRescanState() {
+  activeRescanPlantId = null;
+  const badgeLabel = document.getElementById("result-badge-label");
+  const addToGardenBtn = document.getElementById("btn-add-to-garden");
+  if (badgeLabel) badgeLabel.textContent = "🌿 Plantora AI Analizi";
+  if (addToGardenBtn) addToGardenBtn.innerHTML = "Bahçeme Ekle 🌿";
+}
+
+// Reset Scanner View to upload zone
+function resetScannerView(preserveRescan: boolean = false) {
+  const uploadZone = document.getElementById("upload-zone") as HTMLDivElement;
+  const fileInput = document.getElementById("file-input") as HTMLInputElement;
+  const previewContainer = document.getElementById("scan-preview-container") as HTMLDivElement;
+  const quickPicker = document.getElementById("quick-picker-section") as HTMLDivElement;
+  const resultCard = document.getElementById("result-card") as HTMLDivElement;
+
+  if (uploadZone) uploadZone.classList.remove("hidden");
+  if (quickPicker) quickPicker.classList.remove("hidden");
+  if (previewContainer) previewContainer.classList.add("hidden");
+  if (resultCard) resultCard.classList.add("hidden");
+  if (fileInput) fileInput.value = "";
+
+  activeScanTarget = null;
+
+  if (!preserveRescan) {
+    cancelRescanState();
+    const uploadHeader = document.querySelector('#upload-zone h4');
+    if (uploadHeader) {
+      uploadHeader.innerHTML = "Fotoğraf Çekin veya Yükleyin";
+    }
+  }
+}
+
 // Tab Navigation
 function setupNavigation() {
   const navItems = document.querySelectorAll(".nav-item");
@@ -317,6 +358,9 @@ function setupNavigation() {
       // Reset rescan notice if leaving scanner tab
       if (targetId !== 'view-scan') {
         cancelRescanState();
+      } else {
+        // If clicking scanner tab, reset scanner view to upload zone
+        resetScannerView(!!activeRescanPlantId);
       }
 
       // Close details overlay on tab switch
@@ -346,15 +390,6 @@ function setupNavigation() {
       if (scanNavBtn) scanNavBtn.click();
     });
   }
-}
-
-// Cancel Re-scan State helper
-function cancelRescanState() {
-  activeRescanPlantId = null;
-  const badgeLabel = document.getElementById("result-badge-label");
-  const addToGardenBtn = document.getElementById("btn-add-to-garden");
-  if (badgeLabel) badgeLabel.textContent = "🌿 Plantora AI Analizi";
-  if (addToGardenBtn) addToGardenBtn.innerHTML = "Bahçeme Ekle 🌿";
 }
 
 // ==========================================================================
@@ -434,7 +469,7 @@ function loadUserSettings(userId: string) {
     if (doc.exists) {
       const data = doc.data();
       
-      hasAcceptedTermsLocal = data.hasAcceptedTerms || false;
+      hasAcceptedTermsLocal = data.hasAcceptedTerms || (localStorage.getItem("hasAcceptedTerms") === "true");
       if (hasAcceptedTermsLocal && disclaimer) {
         disclaimer.classList.add("hidden");
       } else if (disclaimer) {
@@ -588,16 +623,16 @@ function setupDisclaimerActions() {
       localStorage.setItem("hasAcceptedTerms", "true");
       hasAcceptedTermsLocal = true;
       
+      // Hide overlay and show toast immediately so user isn't blocked
+      overlay.classList.add("hidden");
+      showToast("Sözleşme Kabul Edildi ✅", "Uygulamaya hoş geldiniz!", "success");
+      
       db.collection("users").doc(currentUserId).set({
         uid: currentUserId,
         hasAcceptedTerms: true,
         lastActiveAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true }).then(() => {
-        overlay.classList.add("hidden");
-        showToast("Sözleşme Kabul Edildi ✅", "Uygulamaya hoş geldiniz!", "success");
-      }).catch((err: any) => {
-        console.error("Disclaimer save error:", err);
-        overlay.classList.add("hidden");
+      }, { merge: true }).catch((err: any) => {
+        console.error("Disclaimer save error in Firestore:", err);
       });
     });
   }
@@ -889,6 +924,18 @@ function setupUploadAndScanner() {
       }
     }
 
+    // Load image into result image banner
+    const resultImageBanner = document.getElementById("result-image-banner") as HTMLDivElement;
+    if (resultImageBanner && activeScanTarget && activeScanTarget.image) {
+      resultImageBanner.style.backgroundImage = `url('${activeScanTarget.image}')`;
+    }
+
+    // Reset report scroll content to the top
+    const resultScrollContent = document.querySelector(".result-scroll-content") as HTMLDivElement;
+    if (resultScrollContent) {
+      resultScrollContent.scrollTop = 0;
+    }
+
     // If re-scanning, change "Bahçeme Ekle" button to "Raporu Kaydet"
     if (addToGardenBtn) {
       if (activeRescanPlantId) {
@@ -905,12 +952,7 @@ function setupUploadAndScanner() {
   const reScanBtn = document.getElementById("btn-re-scan");
   if (reScanBtn) {
     reScanBtn.addEventListener("click", () => {
-      resultCard.classList.add("hidden");
-      uploadZone.classList.remove("hidden");
-      quickPicker.classList.remove("hidden");
-      if (fileInput) fileInput.value = "";
-      activeScanTarget = null;
-      cancelRescanState();
+      resetScannerView(false);
     });
   }
 }

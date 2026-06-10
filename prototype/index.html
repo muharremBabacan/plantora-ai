@@ -90,7 +90,7 @@
         <!-- TAB 1: BAHÇEM (MY GARDEN) -->
         <div id="view-garden" class="app-view active">
           <div class="view-intro">
-            <h1>Merhaba, Bitki Dostu! 👋</h1>
+            <h1 id="welcome-greeting">Merhaba, Bitki Dostu! 👋</h1>
             <p>Bahçenizdeki bitkilerin genel durumunu buradan takip edebilirsiniz.</p>
           </div>
 
@@ -196,35 +196,41 @@
               <h3>Sağlık Raporu</h3>
             </div>
 
-            <!-- Prominent Health Score -->
-            <div class="result-health-hero">
-              <span class="health-label">SAĞLIK SKORU</span>
-              <div class="health-score-large" id="result-health-score">82/100</div>
-              <div class="health-status-badge" id="result-health-badge">🟢 İyi Durumda</div>
-            </div>
+            <!-- Plant Photo Banner at the Top -->
+            <div class="result-image-banner" id="result-image-banner"></div>
 
-            <div class="result-report-details">
-              <div class="report-item">
-                <div class="report-item-title">📋 Tespit Edilen Durum</div>
-                <div class="report-item-value" id="result-status">Monstera Deliciosa</div>
-              </div>
-              
-              <div class="report-item">
-                <div class="report-item-title">💡 AI Yorumu</div>
-                <div class="report-item-value" id="result-comment">Yorum yükleniyor...</div>
+            <!-- Scrollable Report Details Wrapper -->
+            <div class="result-scroll-content">
+              <!-- Prominent Health Score -->
+              <div class="result-health-hero">
+                <span class="health-label">SAĞLIK SKORU</span>
+                <div class="health-score-large" id="result-health-score">82/100</div>
+                <div class="health-status-badge" id="result-health-badge">🟢 İyi Durumda</div>
               </div>
 
-              <div class="report-item">
-                <div class="report-item-title">🛠 Önerilen Çözüm</div>
-                <div class="report-item-value" id="result-recommendation">Daha fazla güneş ışığı sağlayın.</div>
-              </div>
-            </div>
+              <div class="result-report-details">
+                <div class="report-item">
+                  <div class="report-item-title">📋 Tespit Edilen Durum</div>
+                  <div class="report-item-value" id="result-status">Monstera Deliciosa</div>
+                </div>
+                
+                <div class="report-item">
+                  <div class="report-item-title">💡 AI Yorumu</div>
+                  <div class="report-item-value" id="result-comment">Yorum yükleniyor...</div>
+                </div>
 
-            <!-- Inline Nickname Form (replaces prompt popup) -->
-            <div class="nickname-form-wrapper" id="nickname-form-wrapper">
-              <label for="nickname-input" class="nickname-label">🏷️ Bitkinize İsim Verin</label>
-              <div class="nickname-input-container">
-                <input type="text" id="nickname-input" class="nickname-input" placeholder="Örn: Salon Çiçeğim" autocomplete="off">
+                <div class="report-item">
+                  <div class="report-item-title">🛠 Önerilen Çözüm</div>
+                  <div class="report-item-value" id="result-recommendation">Daha fazla güneş ışığı sağlayın.</div>
+                </div>
+              </div>
+
+              <!-- Inline Nickname Form (replaces prompt popup) -->
+              <div class="nickname-form-wrapper" id="nickname-form-wrapper">
+                <label for="nickname-input" class="nickname-label">🏷️ Bitkinize İsim Verin</label>
+                <div class="nickname-input-container">
+                  <input type="text" id="nickname-input" class="nickname-input" placeholder="Örn: Salon Çiçeğim" autocomplete="off">
+                </div>
               </div>
             </div>
 
