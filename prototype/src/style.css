@@ -1525,6 +1525,98 @@ body {
 }
 
 /* ==========================================================================
+   DEVICE SYNC / PAIRING FORM
+   ========================================================================== */
+.sync-actions-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.sync-action-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-action-box h5 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-white);
+  margin-bottom: 2px;
+}
+
+.sync-help {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.sync-action-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  margin: 5px 0;
+}
+
+.sync-code-display {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  animation: fadeIn 0.3s ease;
+}
+
+.sync-code-num {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--primary-light);
+  font-family: monospace;
+}
+
+.sync-code-warning {
+  font-size: 0.65rem;
+  color: var(--warning);
+  line-height: 1.3;
+}
+
+.sync-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sync-input-row input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--text-white);
+  outline: none;
+  font-family: monospace;
+  letter-spacing: 2px;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.sync-input-row input:focus {
+  border-color: var(--primary-light);
+}
+
+.sync-input-row button {
+  white-space: nowrap;
+}
+
+/* ==========================================================================
    CUSTOM TOAST NOTIFICATION
    ========================================================================== */
 .app-toast {

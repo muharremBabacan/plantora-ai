@@ -351,6 +351,34 @@
                 <input type="checkbox" id="settings-toggle-sms">
                 <span class="slider"></span>
               </label>
+          </div>
+
+          <!-- Device Sync / Pairing Section -->
+          <div class="settings-card">
+            <h3>🔗 Cihaz Eşleştirme & Senkronizasyon</h3>
+            <p class="section-desc">Mevcut bahçe verilerinizi telefon, tablet veya başka bir bilgisayarla eşleştirebilirsiniz.</p>
+            
+            <div class="sync-actions-grid">
+              <div class="sync-action-box">
+                <h5>Bu Cihazı Paylaş</h5>
+                <p class="sync-help">Bu bahçeyi başka bir cihazda açmak için bir eşleşme kodu üretin.</p>
+                <button class="btn btn-secondary btn-sm" id="btn-generate-sync-code" style="width: 100%;">Eşleşme Kodu Üret 🔑</button>
+                <div id="sync-code-display" class="sync-code-display hidden">
+                  <div class="sync-code-num" id="sync-code-val">------</div>
+                  <p class="sync-code-warning">⚠️ Bu kod 5 dakika geçerlidir. Yeni cihazınızda bu kodu girerek bahçenizi eşleştirebilirsiniz.</p>
+                </div>
+              </div>
+              
+              <div class="sync-action-divider"></div>
+              
+              <div class="sync-action-box">
+                <h5>Mevcut Bir Bahçeye Bağlan</h5>
+                <p class="sync-help">Başka bir cihazda ürettiğiniz 6 haneli kodu girerek o bahçeye bağlanın.</p>
+                <div class="sync-input-row">
+                  <input type="text" id="sync-input-code" placeholder="Örn: 482910" maxlength="6" autocomplete="off">
+                  <button class="btn btn-primary btn-sm" id="btn-submit-sync-code">Bağlan ➔</button>
+                </div>
+              </div>
             </div>
           </div>
 

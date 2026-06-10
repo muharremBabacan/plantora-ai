@@ -279,20 +279,25 @@ document.addEventListener("DOMContentLoaded", () => {
   setupDetailsOverlay();
   setupSettingsActions();
   setupDisclaimerActions();
+  setupDeviceSync();
   
-  // Fetch geolocation then authenticate anonymously and start listening
+  // Fetch geolocation then check auth state or authenticate anonymously
   fetchUserLocation().then(() => {
-    auth.signInAnonymously().then((cred: any) => {
-      if (cred.user) {
-        currentUserId = cred.user.uid;
+    // Standard Firebase Auth state observer to prevent overriding existing logged in user
+    auth.onAuthStateChanged((user: any) => {
+      if (user) {
+        currentUserId = user.uid;
         saveUserRecord(currentUserId);
         loadUserSettings(currentUserId);
         listenToGarden(currentUserId);
+      } else {
+        // If not authenticated at all, sign in anonymously
+        auth.signInAnonymously().catch((err: any) => {
+          console.error("Auth error:", err);
+          loadUserSettings(currentUserId);
+          listenToGarden(currentUserId);
+        });
       }
-    }).catch((err: any) => {
-      console.error("Auth error:", err);
-      loadUserSettings(currentUserId);
-      listenToGarden(currentUserId);
     });
   });
 });
@@ -595,6 +600,96 @@ function setupSettingsActions() {
       }).catch((err: any) => {
         console.error("Save settings error:", err);
         showToast("Hata 🚨", "Ayarlar kaydedilemedi.", "danger");
+      });
+    });
+  }
+}
+
+function setupDeviceSync() {
+  const generateBtn = document.getElementById("btn-generate-sync-code") as HTMLButtonElement;
+  const submitBtn = document.getElementById("btn-submit-sync-code") as HTMLButtonElement;
+  const syncInput = document.getElementById("sync-input-code") as HTMLInputElement;
+  const codeDisplay = document.getElementById("sync-code-display") as HTMLDivElement;
+  const codeVal = document.getElementById("sync-code-val") as HTMLDivElement;
+
+  if (generateBtn) {
+    generateBtn.addEventListener("click", () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        showToast("Hata 🚨", "Oturum bulunamadı.", "danger");
+        return;
+      }
+
+      generateBtn.disabled = true;
+      generateBtn.innerText = "Kod Üretiliyor... ⏳";
+
+      // Generate random 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const email = `pair_${code}@plantora.ai`;
+      const password = `plantora_pair_${code}`;
+
+      // Link current anonymous account with this email/password credential
+      const credential = firebase.auth.EmailAuthProvider.credential(email, password);
+      currentUser.linkWithCredential(credential).then(() => {
+        if (codeVal) codeVal.textContent = code;
+        if (codeDisplay) codeDisplay.classList.remove("hidden");
+        generateBtn.innerText = "Yeni Eşleşme Kodu Üretildi ✅";
+        showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan veya diğer cihazınızdan bu kodu girerek bağlanabilirsiniz.", "success");
+      }).catch((err: any) => {
+        console.error("Account linking failed:", err);
+        generateBtn.disabled = false;
+        generateBtn.innerText = "Eşleşme Kodu Üret 🔑";
+        if (err.code === "auth/email-already-in-use" || err.code === "auth/credential-already-in-use") {
+          showToast("Hata 🚨", "Bu hesap zaten başka bir cihazla eşleştirilmiş veya çakışma oluştu. Lütfen tekrar deneyin.", "danger");
+        } else {
+          showToast("Bağlantı Hatası 🚨", "Eşleşme kodu oluşturulamadı: " + err.message, "danger");
+        }
+      });
+    });
+  }
+
+  if (submitBtn && syncInput) {
+    submitBtn.addEventListener("click", () => {
+      const rawCode = syncInput.value.trim();
+      const code = rawCode.replace(/\s+/g, ""); // strip whitespace
+      if (!/^\d{6}$/.test(code)) {
+        showToast("Hata ⚠️", "Lütfen 6 haneli kodu eksiksiz girin.", "warning");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Bağlanıyor... ⏳";
+
+      const email = `pair_${code}@plantora.ai`;
+      const password = `plantora_pair_${code}`;
+
+      // Sign in with the paired email/password credentials
+      auth.signInWithEmailAndPassword(email, password).then((cred: any) => {
+        if (cred.user) {
+          currentUserId = cred.user.uid;
+          
+          showToast("Bağlantı Başarılı! 🌿", "Diğer cihazdaki bahçe verileri yüklendi.", "success");
+
+          // Reset inputs and buttons
+          syncInput.value = "";
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Bağlan ➔";
+
+          // Switch tab view to Garden tab
+          const gardenTabBtn = document.querySelector('[data-target="view-garden"]') as HTMLButtonElement;
+          if (gardenTabBtn) {
+            gardenTabBtn.click();
+          }
+        }
+      }).catch((err: any) => {
+        console.error("Sign in pairing error:", err);
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Bağlan ➔";
+        if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
+          showToast("Başarısız ⚠️", "Geçersiz veya süresi dolmuş eşleşme kodu!", "danger");
+        } else {
+          showToast("Hata 🚨", "Bağlantı kurulamadı: " + err.message, "danger");
+        }
       });
     });
   }
