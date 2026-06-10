@@ -441,7 +441,7 @@ function resetScannerView(preserveRescan: boolean = false) {
 }
 
 // Global tab switcher with animations
-function switchTab(targetId: string) {
+function switchTab(targetId: string, animate = false) {
   const currentView = document.querySelector(".app-view.active") as HTMLElement;
   if (!currentView) {
     const targetView = document.getElementById(targetId);
@@ -469,6 +469,23 @@ function switchTab(targetId: string) {
     detailsOverlay.classList.remove("active");
   }
 
+  // Update navbar active state
+  const navItems = document.querySelectorAll(".nav-item, #btn-header-settings");
+  navItems.forEach(n => {
+    if (n.getAttribute("data-target") === targetId) {
+      n.classList.add("active");
+    } else {
+      n.classList.remove("active");
+    }
+  });
+
+  if (!animate) {
+    // Instant switch
+    currentView.classList.remove("active");
+    targetView.classList.add("active");
+    return;
+  }
+
   const VIEW_INDEXES: Record<string, number> = {
     "view-garden": 0,
     "view-scan": 1,
@@ -480,8 +497,16 @@ function switchTab(targetId: string) {
   const isRight = targetIndex > currentIndex;
 
   // Clear any existing animation classes
-  currentView.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right");
-  targetView.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right");
+  currentView.classList.remove("flat-slide-in-left", "flat-slide-in-right", "flat-slide-out-left", "flat-slide-out-right");
+  targetView.classList.remove("flat-slide-in-left", "flat-slide-in-right", "flat-slide-out-left", "flat-slide-out-right");
+
+  const contentEl = document.querySelector(".app-content") as HTMLElement;
+  let originalHeight = "";
+  if (contentEl) {
+    originalHeight = contentEl.style.height;
+    contentEl.style.height = `${contentEl.offsetHeight}px`;
+    contentEl.style.overflow = "hidden";
+  }
 
   // Position absolutely to prevent layout push during animation
   currentView.style.position = 'absolute';
@@ -494,33 +519,28 @@ function switchTab(targetId: string) {
 
   // Trigger animations
   if (isRight) {
-    currentView.classList.add("slide-out-left");
-    targetView.classList.add("slide-in-right");
+    currentView.classList.add("flat-slide-out-left");
+    targetView.classList.add("flat-slide-in-right");
   } else {
-    currentView.classList.add("slide-out-right");
-    targetView.classList.add("slide-in-left");
+    currentView.classList.add("flat-slide-out-right");
+    targetView.classList.add("flat-slide-in-left");
   }
 
-  // Update navbar active state
-  const navItems = document.querySelectorAll(".nav-item, #btn-header-settings");
-  navItems.forEach(n => {
-    if (n.getAttribute("data-target") === targetId) {
-      n.classList.add("active");
-    } else {
-      n.classList.remove("active");
-    }
-  });
-
-  // Clean up classes and restore layout after animation runs (0.28 seconds)
+  // Clean up classes and restore layout after animation runs (0.22 seconds)
   setTimeout(() => {
-    currentView.classList.remove("active", "slide-out-left", "slide-out-right");
-    targetView.classList.remove("slide-in-left", "slide-in-right");
+    currentView.classList.remove("active", "flat-slide-out-left", "flat-slide-out-right");
+    targetView.classList.remove("flat-slide-in-left", "flat-slide-in-right");
 
     currentView.style.position = '';
     currentView.style.width = '';
     targetView.style.position = '';
     targetView.style.width = '';
-  }, 280);
+
+    if (contentEl) {
+      contentEl.style.height = originalHeight;
+      contentEl.style.overflow = "";
+    }
+  }, 220);
 }
 
 // Check if touch event started on interactive element that should not trigger page swipe
@@ -589,12 +609,12 @@ function setupTabSwipeGestures() {
       if (diffX < 0) {
         // Swiped left -> Next tab
         if (currentIndex < 3) {
-          switchTab(VIEW_KEYS[currentIndex + 1]);
+          switchTab(VIEW_KEYS[currentIndex + 1], true);
         }
       } else {
         // Swiped right -> Prev tab
         if (currentIndex > 0) {
-          switchTab(VIEW_KEYS[currentIndex - 1]);
+          switchTab(VIEW_KEYS[currentIndex - 1], true);
         }
       }
     }

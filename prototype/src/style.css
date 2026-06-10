@@ -456,8 +456,6 @@ html.theme-light .nav-scanner-btn:hover .nav-scanner-circle {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transform: translateY(8px);
-  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s;
 }
 
 .app-view:not(.active) {
@@ -467,7 +465,6 @@ html.theme-light .nav-scanner-btn:hover .nav-scanner-circle {
   pointer-events: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
-  transform: translateY(8px) !important;
 }
 
 .app-view.active {
@@ -475,7 +472,6 @@ html.theme-light .nav-scanner-btn:hover .nav-scanner-circle {
   opacity: 1;
   pointer-events: auto;
   visibility: visible;
-  transform: translateY(0);
 }
 
 /* ==========================================================================
@@ -2565,35 +2561,35 @@ html.font-size-large {
   transform: scale(1.05);
 }
 
-/* Page transitions slide animations */
-.slide-out-left {
-  animation: slideOutLeft 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+/* Page transitions flat slide animations for swipe gestures */
+.flat-slide-out-left {
+  animation: flatSlideOutLeft 0.22s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
 }
-.slide-in-right {
-  animation: slideInRight 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+.flat-slide-in-right {
+  animation: flatSlideInRight 0.22s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
 }
-.slide-out-right {
-  animation: slideOutRight 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+.flat-slide-out-right {
+  animation: flatSlideOutRight 0.22s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
 }
-.slide-in-left {
-  animation: slideInLeft 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+.flat-slide-in-left {
+  animation: flatSlideInLeft 0.22s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
 }
 
-@keyframes slideOutLeft {
-  0% { opacity: 1; transform: translateX(0); }
-  100% { opacity: 0; transform: translateX(-30px); }
+@keyframes flatSlideOutLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
 }
-@keyframes slideInRight {
-  0% { opacity: 0; transform: translateX(30px); }
-  100% { opacity: 1; transform: translateX(0); }
+@keyframes flatSlideInRight {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(0); }
 }
-@keyframes slideOutRight {
-  0% { opacity: 1; transform: translateX(0); }
-  100% { opacity: 0; transform: translateX(30px); }
+@keyframes flatSlideOutRight {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
 }
-@keyframes slideInLeft {
-  0% { opacity: 0; transform: translateX(-30px); }
-  100% { opacity: 1; transform: translateX(0); }
+@keyframes flatSlideInLeft {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0); }
 }
 
 /* Input variable mappings to keep them editable in Light mode */
