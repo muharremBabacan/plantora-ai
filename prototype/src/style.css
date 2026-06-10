@@ -405,6 +405,15 @@ body {
   margin-top: 2px;
 }
 
+/* Light Theme Header Overrides */
+html.theme-light .app-header {
+  background: #FFFFFF;
+  border-bottom: 1px solid rgba(22, 163, 74, 0.1);
+}
+html.theme-light .header-btn:hover {
+  background: rgba(22, 163, 74, 0.06);
+}
+
 /* Light Theme Navigation Bar Overrides */
 html.theme-light .app-nav {
   background: rgba(246, 248, 243, 0.92);
