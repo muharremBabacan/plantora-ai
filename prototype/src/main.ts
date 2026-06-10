@@ -347,7 +347,7 @@ function resetScannerView(preserveRescan: boolean = false) {
 
 // Tab Navigation
 function setupNavigation() {
-  const navItems = document.querySelectorAll(".nav-item");
+  const navItems = document.querySelectorAll(".nav-item, #btn-header-settings");
   const views = document.querySelectorAll(".app-view");
 
   navItems.forEach(item => {
