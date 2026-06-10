@@ -1,0 +1,12 @@
+{
+  "name": "plantora-ai-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "prototype"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=prototype",
+    "start": "npm start --workspace=prototype"
+  }
+}
