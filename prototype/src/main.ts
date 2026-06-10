@@ -207,6 +207,7 @@ let customImageSrc: string | null = null;
 
 // Track if current scan is a re-scan of an existing plant
 let activeRescanPlantId: string | null = null;
+let myPairingCode: string | null = null;
 
 function listenToGarden(userId: string) {
   db.collection("users").doc(userId).collection("plants")
@@ -280,6 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupSettingsActions();
   setupDisclaimerActions();
   setupDeviceSync();
+  setupGoogleAuth();
   setupFontSizeSelector();
   
   // Fetch geolocation then check auth state or authenticate anonymously
@@ -289,11 +291,34 @@ document.addEventListener("DOMContentLoaded", () => {
       if (user) {
         // Use paired user ID if it exists in localStorage, otherwise use authenticated user's UID
         const savedPairedId = localStorage.getItem("paired_user_id");
-        currentUserId = savedPairedId || user.uid;
+        const targetUserId = savedPairedId || user.uid;
 
-        saveUserRecord(currentUserId);
-        loadUserSettings(currentUserId);
-        listenToGarden(currentUserId);
+        // Check if we have a temporary anonymous account to merge
+        const oldAnonUid = localStorage.getItem("old_anon_uid");
+        if (oldAnonUid && oldAnonUid !== targetUserId) {
+          localStorage.removeItem("old_anon_uid");
+          showToast("Bahçeler Birleştiriliyor... 🔄", "Misafir verileriniz hesabınıza taşınıyor.", "warning");
+          
+          mergeAndDestroyUser(oldAnonUid, targetUserId).then(() => {
+            currentUserId = targetUserId;
+            saveUserRecord(currentUserId);
+            loadUserSettings(currentUserId);
+            listenToGarden(currentUserId);
+            showToast("Veriler Birleştirildi! 🎉", "Tüm bitki geçmişiniz başarıyla aktarıldı.", "success");
+          }).catch((err: any) => {
+            console.error("Merge failed:", err);
+            // Fallback to loading target user settings anyway
+            currentUserId = targetUserId;
+            saveUserRecord(currentUserId);
+            loadUserSettings(currentUserId);
+            listenToGarden(currentUserId);
+          });
+        } else {
+          currentUserId = targetUserId;
+          saveUserRecord(currentUserId);
+          loadUserSettings(currentUserId);
+          listenToGarden(currentUserId);
+        }
       } else {
         // If not authenticated at all, sign in anonymously
         auth.signInAnonymously().catch((err: any) => {
@@ -508,6 +533,17 @@ function loadUserSettings(userId: string) {
       }
       renderAvatarPickers();
       selectAvatar(selectedAvatarId);
+
+      // Load pairingCode from settings
+      myPairingCode = data.pairingCode || null;
+      const generateBtn = document.getElementById("btn-generate-sync-code") as HTMLButtonElement;
+      if (generateBtn) {
+        if (myPairingCode) {
+          generateBtn.innerText = "Eşleşme Kodunu Göster 🔑";
+        } else {
+          generateBtn.innerText = "Eşleşme Kodu Üret 🔑";
+        }
+      }
     } else {
       if (disclaimer) {
         // If not in local storage either, show it
@@ -609,6 +645,84 @@ function setupSettingsActions() {
   }
 }
 
+async function mergeAndDestroyUser(sourceUid: string, targetUid: string): Promise<void> {
+  if (!sourceUid || !targetUid || sourceUid === targetUid) {
+    return;
+  }
+  console.log(`Starting merge from ${sourceUid} to ${targetUid}...`);
+
+  try {
+    // 1. Merge settings/profile if target does not have it
+    const sourceUserDoc = await db.collection("users").doc(sourceUid).get();
+    const targetUserDoc = await db.collection("users").doc(targetUid).get();
+    
+    if (sourceUserDoc.exists) {
+      const sourceUserData = sourceUserDoc.data();
+      if (!targetUserDoc.exists) {
+        await db.collection("users").doc(targetUid).set(sourceUserData);
+      } else {
+        const targetUserData = targetUserDoc.data() || {};
+        const mergedUserData: any = {};
+        const fieldsToMerge = ["name", "email", "phone", "avatarId", "emailNotifications", "smsNotifications", "hasAcceptedTerms"];
+        
+        fieldsToMerge.forEach(field => {
+          if ((targetUserData[field] === undefined || targetUserData[field] === null || targetUserData[field] === "") && sourceUserData[field] !== undefined) {
+            mergedUserData[field] = sourceUserData[field];
+          }
+        });
+
+        if (Object.keys(mergedUserData).length > 0) {
+          await db.collection("users").doc(targetUid).set(mergedUserData, { merge: true });
+        }
+      }
+    }
+
+    // 2. Fetch all plants of the source user
+    const plantsSnapshot = await db.collection("users").doc(sourceUid).collection("plants").get();
+    
+    // 3. Loop and copy each plant & its reports
+    for (const plantDoc of plantsSnapshot.docs) {
+      const plantId = plantDoc.id;
+      const plantData = plantDoc.data();
+
+      // Write plant to target user
+      await db.collection("users").doc(targetUid).collection("plants").doc(plantId).set(plantData, { merge: true });
+
+      // Fetch all reports of this plant
+      const reportsSnapshot = await db.collection("users").doc(sourceUid).collection("plants").doc(plantId).collection("reports").get();
+      for (const reportDoc of reportsSnapshot.docs) {
+        const reportId = reportDoc.id;
+        const reportData = reportDoc.data();
+
+        // Write report to target user
+        await db.collection("users").doc(targetUid).collection("plants").doc(plantId).collection("reports").doc(reportId).set(reportData, { merge: true });
+
+        // Delete source report
+        await db.collection("users").doc(sourceUid).collection("plants").doc(plantId).collection("reports").doc(reportId).delete();
+      }
+
+      // Also copy/delete schedules if any
+      const schedulesSnapshot = await db.collection("users").doc(sourceUid).collection("plants").doc(plantId).collection("schedules").get();
+      for (const schedDoc of schedulesSnapshot.docs) {
+        const schedId = schedDoc.id;
+        const schedData = schedDoc.data();
+        await db.collection("users").doc(targetUid).collection("plants").doc(plantId).collection("schedules").doc(schedId).set(schedData, { merge: true });
+        await db.collection("users").doc(sourceUid).collection("plants").doc(plantId).collection("schedules").doc(schedId).delete();
+      }
+
+      // Delete source plant
+      await db.collection("users").doc(sourceUid).collection("plants").doc(plantId).delete();
+    }
+
+    // 4. Delete source user document
+    await db.collection("users").doc(sourceUid).delete();
+    console.log(`Successfully merged and destroyed user ${sourceUid} (snake skin shed).`);
+  } catch (err) {
+    console.error("Error during mergeAndDestroyUser:", err);
+    throw err;
+  }
+}
+
 function setupDeviceSync() {
   const generateBtn = document.getElementById("btn-generate-sync-code") as HTMLButtonElement;
   const submitBtn = document.getElementById("btn-submit-sync-code") as HTMLButtonElement;
@@ -637,6 +751,14 @@ function setupDeviceSync() {
         return;
       }
 
+      // If pairing code already exists, just show it!
+      if (myPairingCode) {
+        if (codeVal) codeVal.textContent = myPairingCode;
+        if (codeDisplay) codeDisplay.classList.remove("hidden");
+        showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan bu kodu girerek bağlanabilirsiniz.", "success");
+        return;
+      }
+
       generateBtn.disabled = true;
       generateBtn.innerText = "Kod Üretiliyor... ⏳";
 
@@ -648,10 +770,16 @@ function setupDeviceSync() {
         uid: currentUserId,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       }).then(() => {
+        // Also save this code to the user's profile so it is permanent!
+        return db.collection("users").doc(currentUserId).set({
+          pairingCode: code
+        }, { merge: true });
+      }).then(() => {
+        myPairingCode = code;
         if (codeVal) codeVal.textContent = code;
         if (codeDisplay) codeDisplay.classList.remove("hidden");
         generateBtn.disabled = false;
-        generateBtn.innerText = "Eşleşme Kodu Üret 🔑";
+        generateBtn.innerText = "Eşleşme Kodunu Göster 🔑";
         showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan bu kodu girerek bağlanabilirsiniz.", "success");
       }).catch((err: any) => {
         console.error("Firestore pairing write failed:", err);
@@ -680,26 +808,52 @@ function setupDeviceSync() {
           const data = doc.data();
           const targetUid = data.uid;
 
-          // Save paired UID locally
-          localStorage.setItem("paired_user_id", targetUid);
-          currentUserId = targetUid;
+          const currentUser = auth.currentUser;
+          const sourceUid = currentUser ? currentUser.uid : currentUserId;
+          
+          if (sourceUid && sourceUid !== targetUid) {
+            showToast("Bahçeler Birleştiriliyor... 🔄", "Misafir verileriniz aktarılıyor.", "warning");
+            
+            mergeAndDestroyUser(sourceUid, targetUid).then(() => {
+              localStorage.setItem("paired_user_id", targetUid);
+              currentUserId = targetUid;
 
-          // Reload application data for this user ID
-          loadUserSettings(currentUserId);
-          listenToGarden(currentUserId);
+              loadUserSettings(currentUserId);
+              listenToGarden(currentUserId);
 
-          showToast("Bağlantı Başarılı! 🌿", "Diğer cihazdaki bahçe verileri yüklendi.", "success");
+              showToast("Bağlantı Başarılı! 🌿", "Diğer cihazdaki bahçe verileri birleştirilerek yüklendi.", "success");
+              finishPairing();
+            }).catch((err: any) => {
+              console.error("Pairing merge error:", err);
+              // Fallback: just link anyway
+              localStorage.setItem("paired_user_id", targetUid);
+              currentUserId = targetUid;
+              loadUserSettings(currentUserId);
+              listenToGarden(currentUserId);
+              showToast("Bağlantı Kuruldu ⚠️", "Veriler tam birleştirilemedi ama bahçeye bağlanıldı.", "warning");
+              finishPairing();
+            });
+          } else {
+            localStorage.setItem("paired_user_id", targetUid);
+            currentUserId = targetUid;
+            loadUserSettings(currentUserId);
+            listenToGarden(currentUserId);
+            showToast("Bağlantı Başarılı! 🌿", "Diğer cihazdaki bahçe verileri yüklendi.", "success");
+            finishPairing();
+          }
 
-          // Reset inputs and buttons
-          syncInput.value = "";
-          submitBtn.disabled = false;
-          submitBtn.innerText = "Bağlan ➔";
-          checkDisconnectState();
+          function finishPairing() {
+            // Reset inputs and buttons
+            syncInput.value = "";
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Bağlan ➔";
+            checkDisconnectState();
 
-          // Switch tab view to Garden tab
-          const gardenTabBtn = document.querySelector('[data-target="view-garden"]') as HTMLButtonElement;
-          if (gardenTabBtn) {
-            gardenTabBtn.click();
+            // Switch tab view to Garden tab
+            const gardenTabBtn = document.querySelector('[data-target="view-garden"]') as HTMLButtonElement;
+            if (gardenTabBtn) {
+              gardenTabBtn.click();
+            }
           }
         } else {
           submitBtn.disabled = false;
@@ -726,6 +880,91 @@ function setupDeviceSync() {
       }
       checkDisconnectState();
       showToast("Bağlantı Kesildi ❌", "Kendi yerel cihaz bahçenize geri döndünüz.", "success");
+    });
+  }
+}
+
+function setupGoogleAuth() {
+  const googleBtn = document.getElementById("btn-google-login") as HTMLButtonElement;
+  const logoutBtn = document.getElementById("btn-google-logout") as HTMLButtonElement;
+  const loggedOutDiv = document.getElementById("google-auth-logged-out") as HTMLDivElement;
+  const loggedInDiv = document.getElementById("google-auth-logged-in") as HTMLDivElement;
+  const userInfoP = document.getElementById("google-user-info") as HTMLParagraphElement;
+
+  const updateUI = () => {
+    const user = auth.currentUser;
+    if (user && !user.isAnonymous) {
+      if (loggedOutDiv) loggedOutDiv.classList.add("hidden");
+      if (loggedInDiv) loggedInDiv.classList.remove("hidden");
+      if (userInfoP) userInfoP.textContent = `Google ile Bağlandı: ${user.email}`;
+    } else {
+      if (loggedOutDiv) loggedOutDiv.classList.remove("hidden");
+      if (loggedInDiv) loggedInDiv.classList.add("hidden");
+    }
+  };
+
+  // Run on startup
+  auth.onAuthStateChanged(() => {
+    updateUI();
+  });
+
+  if (googleBtn) {
+    googleBtn.addEventListener("click", () => {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Save old anon/active UID to merge it after sign-in completes
+        localStorage.setItem("old_anon_uid", currentUserId);
+      }
+
+      const provider = new firebase.auth.GoogleAuthProvider();
+      googleBtn.disabled = true;
+      googleBtn.innerText = "Giriş Yapılıyor... ⏳";
+
+      auth.signInWithPopup(provider).then(() => {
+        showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+            <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+          </svg>
+          Google ile Giriş Yap / Bağla
+        `;
+        localStorage.removeItem("paired_user_id");
+        updateUI();
+      }).catch((err: any) => {
+        console.error("Google login failed:", err);
+        localStorage.removeItem("old_anon_uid");
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+            <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+          </svg>
+          Google ile Giriş Yap / Bağla
+        `;
+        showToast("Hata 🚨", "Google girişi başarısız oldu: " + err.message, "danger");
+      });
+    });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", () => {
+      logoutBtn.disabled = true;
+      logoutBtn.innerText = "Çıkış Yapılıyor... ⏳";
+
+      auth.signOut().then(() => {
+        localStorage.removeItem("paired_user_id");
+        localStorage.removeItem("old_anon_uid");
+        currentUserId = "anonymous_web_user";
+        showToast("Oturum Kapatıldı 🚪", "Başarıyla çıkış yaptınız.", "success");
+        logoutBtn.disabled = false;
+        logoutBtn.innerText = "Oturumu Kapat ❌";
+        updateUI();
+      }).catch((err: any) => {
+        console.error("Signout failed:", err);
+        logoutBtn.disabled = false;
+        logoutBtn.innerText = "Oturumu Kapat ❌";
+        showToast("Hata 🚨", "Oturum kapatılamadı: " + err.message, "danger");
+      });
     });
   }
 }
