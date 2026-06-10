@@ -1246,6 +1246,20 @@ function setupGoogleAuth() {
 
   if (googleBtn) {
     googleBtn.addEventListener("click", () => {
+      // Check if iOS standalone PWA (which breaks standard OAuth redirects due to Safari sandbox breakout)
+      const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) 
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isStandalone && isIOS) {
+        showToast(
+          "PWA Giriş Sınırı ⚠️",
+          "iOS PWA uygulamasında Google Girişi doğrudan yapılamaz. Lütfen tarayıcıdan (Safari) girip Google ile eşleşme kodu alın ve buraya bağlayın.",
+          "warning"
+        );
+        return;
+      }
+
       const currentUser = auth.currentUser;
       if (currentUser) {
         // Save old anon/active UID to merge it after sign-in completes
@@ -1256,13 +1270,39 @@ function setupGoogleAuth() {
       googleBtn.disabled = true;
       googleBtn.innerText = "Giriş Yapılıyor... ⏳";
 
-      // Check if mobile (popups are unreliable or blocked on mobile Safari/in-app browsers)
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
-        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      // Try to sign in with popup first (most reliable on iOS Safari because redirect is blocked by ITP)
+      auth.signInWithPopup(provider).then(() => {
+        showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
+        googleBtn.disabled = false;
+        googleBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+            <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+          </svg>
+          Google ile Giriş Yap / Bağla
+        `;
+        localStorage.removeItem("paired_user_id");
+        updateUI();
+      }).catch((popupErr: any) => {
+        console.warn("Google popup login failed/blocked, trying redirect...", popupErr);
+        
+        // If popup is blocked or failed, fall back to redirect on mobile
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+          || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-      if (isMobile) {
-        auth.signInWithRedirect(provider).catch((err: any) => {
-          console.error("Google redirect failed:", err);
+        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request" || isMobile) {
+          auth.signInWithRedirect(provider).catch((redirectErr: any) => {
+            console.error("Google redirect failed:", redirectErr);
+            localStorage.removeItem("old_anon_uid");
+            googleBtn.disabled = false;
+            googleBtn.innerHTML = `
+              <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
+                <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
+              </svg>
+              Google ile Giriş Yap / Bağla
+            `;
+            handleAuthError(redirectErr);
+          });
+        } else {
           localStorage.removeItem("old_anon_uid");
           googleBtn.disabled = false;
           googleBtn.innerHTML = `
@@ -1271,33 +1311,9 @@ function setupGoogleAuth() {
             </svg>
             Google ile Giriş Yap / Bağla
           `;
-          handleAuthError(err);
-        });
-      } else {
-        auth.signInWithPopup(provider).then(() => {
-          showToast("Başarılı 🔑", "Google hesabınız başarıyla bağlandı!", "success");
-          googleBtn.disabled = false;
-          googleBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
-              <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
-            </svg>
-            Google ile Giriş Yap / Bağla
-          `;
-          localStorage.removeItem("paired_user_id");
-          updateUI();
-        }).catch((err: any) => {
-          console.error("Google login failed:", err);
-          localStorage.removeItem("old_anon_uid");
-          googleBtn.disabled = false;
-          googleBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" width="18" height="18" style="background: white; padding: 2px; border-radius: 50%;">
-              <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.51 0-6.357-2.847-6.357-6.357s2.847-6.357 6.357-6.357c1.6 0 3.056.59 4.183 1.558l3.055-3.056C19.206 1.833 15.932 1 12.24 1 5.922 1 12.24s4.922 11.24 11.24 11.24c6.046 0 11.24-4.383 11.24-11.24 0-.746-.07-1.472-.2-2.185l-11.04-.015z"/>
-            </svg>
-            Google ile Giriş Yap / Bağla
-          `;
-          handleAuthError(err);
-        });
-      }
+          handleAuthError(popupErr);
+        }
+      });
     });
   }
 

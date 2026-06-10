@@ -30,6 +30,14 @@
           .then(reg => console.log('ServiceWorker registered', reg))
           .catch(err => console.log('ServiceWorker failed', err));
       });
+      // Force reload when the new service worker takes over to load new assets
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
   </script>
 </head>
