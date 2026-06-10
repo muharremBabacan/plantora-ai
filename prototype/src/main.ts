@@ -1575,6 +1575,58 @@ function setupDetailsOverlay() {
       }
     });
   }
+
+  // Bitkiyi Sil action click
+  const deleteBtn = document.getElementById("btn-delete-plant");
+  if (deleteBtn && overlay) {
+    deleteBtn.addEventListener("click", () => {
+      const activePlantId = deleteBtn.getAttribute("data-plant-id");
+      if (!activePlantId) return;
+
+      const plant = garden.find(p => p.id === activePlantId);
+      if (!plant) return;
+
+      const confirmed = confirm(`"${plant.nickname || plant.bitki}" bitkisini ve tüm analiz geçmişini silmek istediğinize emin misiniz?`);
+      if (!confirmed) return;
+
+      deleteBtn.setAttribute("disabled", "true");
+      const originalText = deleteBtn.innerHTML;
+      deleteBtn.innerHTML = "Siliniyor... ⏳";
+
+      const plantRef = db.collection("users").doc(currentUserId).collection("plants").doc(activePlantId);
+      
+      // 1. Fetch and delete reports
+      plantRef.collection("reports").get().then((snapshot: any) => {
+        const batch = db.batch();
+        snapshot.forEach((doc: any) => {
+          batch.delete(doc.ref);
+        });
+        return batch.commit();
+      }).then(() => {
+        // Also delete schedules if any
+        return plantRef.collection("schedules").get().then((snapshot: any) => {
+          const batch = db.batch();
+          snapshot.forEach((doc: any) => {
+            batch.delete(doc.ref);
+          });
+          return batch.commit();
+        });
+      }).then(() => {
+        // 2. Delete parent plant doc
+        return plantRef.delete();
+      }).then(() => {
+        overlay.classList.remove("active");
+        showToast("Bitki Silindi 🗑️", `"${plant.nickname || plant.bitki}" bahçenizden kaldırıldı.`, "success");
+        deleteBtn.removeAttribute("disabled");
+        deleteBtn.innerHTML = originalText;
+      }).catch((err: any) => {
+        console.error("Error deleting plant:", err);
+        deleteBtn.removeAttribute("disabled");
+        deleteBtn.innerHTML = originalText;
+        showToast("Hata 🚨", "Bitki silinemedi: " + err.message, "danger");
+      });
+    });
+  }
 }
 
 // Carousel State
@@ -1840,9 +1892,13 @@ function showPlantDetails(plantId: string) {
       // Setup gesture events and nav buttons
       setupCarouselGestures();
 
-      // Bind plant ID to rescan button
+      // Bind plant ID to rescan and delete buttons
       if (rescanBtn) {
         rescanBtn.setAttribute("data-plant-id", plant.id);
+      }
+      const deleteBtn = document.getElementById("btn-delete-plant") as HTMLButtonElement;
+      if (deleteBtn) {
+        deleteBtn.setAttribute("data-plant-id", plant.id);
       }
 
       // Bind Alarm & Notification Toggles
