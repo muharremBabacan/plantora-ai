@@ -374,7 +374,7 @@ function resetScannerView(preserveRescan: boolean = false) {
     cancelRescanState();
     const uploadHeader = document.querySelector('#upload-zone h4');
     if (uploadHeader) {
-      uploadHeader.innerHTML = "Fotoğraf Çekin veya Yükleyin";
+      uploadHeader.innerHTML = "Bitkinizi Analiz Edin 🌿";
     }
   }
 }

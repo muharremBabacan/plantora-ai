@@ -673,12 +673,13 @@ body {
 }
 
 .upload-icon {
-  font-size: 2.2rem;
+  font-size: 2.6rem;
 }
 
 .upload-zone h4 {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-white);
 }
 
 .upload-zone p {
