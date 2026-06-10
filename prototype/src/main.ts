@@ -2579,14 +2579,14 @@ function updateGardenHealthCard(avgScore: number) {
   strokeEl.style.strokeDasharray = `${avgScore}, 100`;
 
   if (avgScore >= 85) {
-    statusEl.textContent = "Mükemmel! Bitkileriniz çok mutlu 🌿";
+    statusEl.textContent = "Mükemmel! Bitkileriniz çok sağlıklı ve mutlu 🌿";
     statusEl.style.color = "var(--success)";
   } else if (avgScore >= 60) {
-    statusEl.textContent = "Genel sağlık iyi durumda, dikkat gerek ⚠️";
-    statusEl.style.color = "var(--warning)";
+    statusEl.textContent = "Bahçeniz iyi durumda, rutin bakımları takip edebilirsiniz. 👍";
+    statusEl.style.color = "var(--success)";
   } else {
-    statusEl.textContent = "Bazı bitkileriniz tehlikede! Acil müdahale! 🚨";
-    statusEl.style.color = "var(--danger)";
+    statusEl.textContent = "Bazı bitkilerinizin sevgi dolu bir bakıma ihtiyacı var. 🚨";
+    statusEl.style.color = "var(--warning)";
   }
 }
 

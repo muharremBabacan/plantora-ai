@@ -406,12 +406,38 @@ body {
 }
 
 /* Light Theme Header Overrides */
-html.theme-light .app-header {
-  background: #FFFFFF;
-  border-bottom: 1px solid rgba(22, 163, 74, 0.1);
+html.theme-light .app-header,
+html.theme-light .detail-header {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid rgba(22, 163, 74, 0.1) !important;
 }
 html.theme-light .header-btn:hover {
   background: rgba(22, 163, 74, 0.06);
+}
+
+/* Light Theme Garden Summary Card Overrides */
+html.theme-light .garden-summary-card {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(22, 163, 74, 0.15) !important;
+  box-shadow: var(--shadow-premium) !important;
+}
+html.theme-light .circle-bg {
+  stroke: rgba(22, 163, 74, 0.12) !important;
+}
+
+/* Light Theme Avatar Selection Grid Overrides */
+html.theme-light .avatar-btn {
+  background: #FFFFFF !important;
+  border-color: rgba(22, 163, 74, 0.12) !important;
+}
+html.theme-light .avatar-btn:hover {
+  background: rgba(22, 163, 74, 0.04) !important;
+  border-color: rgba(22, 163, 74, 0.2) !important;
+}
+html.theme-light .avatar-btn.active {
+  background: rgba(22, 163, 74, 0.08) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 10px rgba(22, 163, 74, 0.15) !important;
 }
 
 /* Light Theme Navigation Bar Overrides */
@@ -1140,7 +1166,7 @@ html.theme-light .nav-scanner-btn:hover .nav-scanner-circle {
 }
 
 .btn-water {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  background: linear-gradient(135deg, #10b981, #047857);
   color: white;
   border-radius: 8px;
   font-size: 0.7rem;
@@ -1148,12 +1174,12 @@ html.theme-light .nav-scanner-btn:hover .nav-scanner-circle {
   padding: 6px 12px;
   width: auto;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 3px 6px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 3px 6px rgba(16, 185, 129, 0.2);
 }
 
 .btn-water:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.35);
 }
 
 /* Water Drop animation effect on task complete */
