@@ -1,0 +1,13 @@
+# Firebase App Hosting Configuration (Root)
+scripts:
+  buildCommand: npm run build
+  runCommand: npm start
+
+outputFiles:
+  serverApp:
+    include:
+      - prototype/dist
+      - prototype/server.js
+      - prototype/package.json
+      - package.json
+      - package-lock.json

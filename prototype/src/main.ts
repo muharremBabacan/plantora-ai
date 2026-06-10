@@ -2,6 +2,11 @@
 // PLANTORA AI STATE ENGINE (MVP) - History & Details Updates
 // ==========================================================================
 
+interface OptimizedImage {
+  thumbnail: string;
+  full: string;
+}
+
 interface AnalysisReport {
   id: string;
   date: string;       // e.g. "10 Haziran"
@@ -10,6 +15,7 @@ interface AnalysisReport {
   yorum: string;      // AI commentary
   öneri: string;      // recommended action
   image?: string;     // historical photo URL
+  images?: OptimizedImage[];
 }
 
 interface Plant {
@@ -17,6 +23,7 @@ interface Plant {
   nickname: string;
   bitki: string;      // species name
   image: string;
+  images?: OptimizedImage[];
   addedDate: string;  // e.g. "10 Haziran"
   needsWater: boolean;
   waterFrequencyDays: number;
@@ -94,6 +101,18 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+try {
+  db.enablePersistence({ synchronizeTabs: true })
+    .catch((err: any) => {
+      if (err.code == 'failed-precondition') {
+        console.warn("Firestore persistence failed-precondition: multiple tabs open.");
+      } else if (err.code == 'unimplemented') {
+        console.warn("Firestore persistence unimplemented in this browser.");
+      }
+    });
+} catch (e) {
+  console.error("Firestore persistence error:", e);
+}
 const auth = firebase.auth();
 const storage = firebase.storage();
 let currentUserId = "anonymous_web_user";
@@ -170,6 +189,42 @@ async function getImageUrl(imageSrc: string, plantId: string): Promise<string> {
   return imageSrc || "/monstera.png";
 }
 
+function resizeImageToDataUrl(file: File, maxWidth: number, quality: number = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas 2D context not available"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 function showToast(title: string, message: string, type: 'success' | 'warning' | 'danger' = 'success') {
   const toast = document.getElementById("app-toast") as HTMLDivElement;
   const iconEl = document.getElementById("toast-icon") as HTMLDivElement;
@@ -204,6 +259,8 @@ function showToast(title: string, message: string, type: 'success' | 'warning' |
 let garden: Plant[] = [];
 let activeScanTarget: ScanResult | null = null;
 let customImageSrc: string | null = null;
+let uploadedPhotos: OptimizedImage[] = [];
+let activePhotoIndex: number = 0;
 
 // Track if current scan is a re-scan of an existing plant
 let activeRescanPlantId: string | null = null;
@@ -230,6 +287,7 @@ function listenToGarden(userId: string) {
           öneri: data.öneri || "",
           alarmEnabled: data.alarmEnabled ?? true,
           notificationsEnabled: data.notificationsEnabled ?? true,
+          images: data.images || [],
           analyses: []
         });
       });
@@ -283,6 +341,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupDeviceSync();
   setupGoogleAuth();
   setupFontSizeSelector();
+  setupThemeSelector();
   
   // Fetch geolocation then check auth state or authenticate anonymously
   fetchUserLocation().then(() => {
@@ -369,6 +428,8 @@ function resetScannerView(preserveRescan: boolean = false) {
   if (fileInput) fileInput.value = "";
 
   activeScanTarget = null;
+  uploadedPhotos = [];
+  activePhotoIndex = 0;
 
   if (!preserveRescan) {
     cancelRescanState();
@@ -379,40 +440,252 @@ function resetScannerView(preserveRescan: boolean = false) {
   }
 }
 
-// Tab Navigation
+// Global tab switcher with animations
+function switchTab(targetId: string) {
+  const currentView = document.querySelector(".app-view.active") as HTMLElement;
+  if (!currentView) {
+    const targetView = document.getElementById(targetId);
+    if (targetView) targetView.classList.add("active");
+    return;
+  }
+
+  if (currentView.id === targetId) return;
+
+  const targetView = document.getElementById(targetId) as HTMLElement;
+  if (!targetView) return;
+
+  // Reset rescan notice if leaving/entering scanner tab
+  if (targetId !== 'view-scan') {
+    cancelRescanState();
+  } else {
+    resetScannerView(!!activeRescanPlantId);
+  }
+
+  // Close details overlay on tab switch
+  const detailsOverlay = document.getElementById("plant-detail-overlay") as HTMLDivElement;
+  if (detailsOverlay) {
+    detailsOverlay.style.transition = "";
+    detailsOverlay.style.transform = "";
+    detailsOverlay.classList.remove("active");
+  }
+
+  const VIEW_INDEXES: Record<string, number> = {
+    "view-garden": 0,
+    "view-scan": 1,
+    "view-calendar": 2,
+    "view-settings": 3
+  };
+  const currentIndex = VIEW_INDEXES[currentView.id] ?? 0;
+  const targetIndex = VIEW_INDEXES[targetId] ?? 0;
+  const isRight = targetIndex > currentIndex;
+
+  // Clear any existing animation classes
+  currentView.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right");
+  targetView.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right");
+
+  // Position absolutely to prevent layout push during animation
+  currentView.style.position = 'absolute';
+  currentView.style.width = '100%';
+  targetView.style.position = 'absolute';
+  targetView.style.width = '100%';
+
+  // Make target active so it is rendered
+  targetView.classList.add("active");
+
+  // Trigger animations
+  if (isRight) {
+    currentView.classList.add("slide-out-left");
+    targetView.classList.add("slide-in-right");
+  } else {
+    currentView.classList.add("slide-out-right");
+    targetView.classList.add("slide-in-left");
+  }
+
+  // Update navbar active state
+  const navItems = document.querySelectorAll(".nav-item, #btn-header-settings");
+  navItems.forEach(n => {
+    if (n.getAttribute("data-target") === targetId) {
+      n.classList.add("active");
+    } else {
+      n.classList.remove("active");
+    }
+  });
+
+  // Clean up classes and restore layout after animation runs (0.28 seconds)
+  setTimeout(() => {
+    currentView.classList.remove("active", "slide-out-left", "slide-out-right");
+    targetView.classList.remove("slide-in-left", "slide-in-right");
+
+    currentView.style.position = '';
+    currentView.style.width = '';
+    targetView.style.position = '';
+    targetView.style.width = '';
+  }, 280);
+}
+
+// Check if touch event started on interactive element that should not trigger page swipe
+function shouldIgnoreSwipe(target: HTMLElement | null): boolean {
+  if (!target) return false;
+  let el: HTMLElement | null = target;
+  while (el) {
+    if (
+      el.id === "detail-carousel-container" || 
+      el.classList.contains("scan-thumbnails-container") ||
+      el.classList.contains("timeline-wrapper") ||
+      el.classList.contains("theme-picker") ||
+      el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT" ||
+      el.classList.contains("slider") ||
+      el.classList.contains("card-slider") ||
+      el.classList.contains("no-swipe")
+    ) {
+      return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
+// Setup horizontal swipe gestures to transition tabs
+function setupTabSwipeGestures() {
+  const appScreen = document.querySelector(".app-screen");
+  if (!appScreen) return;
+
+  let startX = 0;
+  let startY = 0;
+  let isSwipeIgnore = false;
+
+  appScreen.addEventListener("touchstart", (e: any) => {
+    const touch = e.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    isSwipeIgnore = shouldIgnoreSwipe(e.target as HTMLElement);
+  }, { passive: true });
+
+  appScreen.addEventListener("touchend", (e: any) => {
+    if (isSwipeIgnore) return;
+
+    const touch = e.changedTouches[0];
+    const diffX = touch.clientX - startX;
+    const diffY = touch.clientY - startY;
+
+    const thresholdX = 70;
+    const thresholdY = 40;
+
+    if (Math.abs(diffX) > thresholdX && Math.abs(diffY) < thresholdY) {
+      const currentView = document.querySelector(".app-view.active") as HTMLElement;
+      if (!currentView) return;
+
+      const VIEW_INDEXES: Record<string, number> = {
+        "view-garden": 0,
+        "view-scan": 1,
+        "view-calendar": 2,
+        "view-settings": 3
+      };
+      const VIEW_KEYS = ["view-garden", "view-scan", "view-calendar", "view-settings"];
+      const currentIndex = VIEW_INDEXES[currentView.id] ?? 0;
+
+      if (diffX < 0) {
+        // Swiped left -> Next tab
+        if (currentIndex < 3) {
+          switchTab(VIEW_KEYS[currentIndex + 1]);
+        }
+      } else {
+        // Swiped right -> Prev tab
+        if (currentIndex > 0) {
+          switchTab(VIEW_KEYS[currentIndex - 1]);
+        }
+      }
+    }
+  });
+}
+
+// Pull-to-close detail screen overlay
+function setupPullToCloseGesture() {
+  const overlay = document.getElementById("plant-detail-overlay") as HTMLDivElement;
+  if (!overlay) return;
+
+  let startY = 0;
+  let isDragging = false;
+  const detailContent = overlay.querySelector(".detail-content") as HTMLElement;
+
+  function handleStart(y: number, target: HTMLElement) {
+    if (detailContent && detailContent.contains(target) && detailContent.scrollTop > 0) {
+      return;
+    }
+    
+    if (target.closest(".carousel-nav") || target.closest("button") || target.closest(".theme-picker") || target.closest("input") || target.closest("#detail-carousel-container")) {
+      return;
+    }
+
+    startY = y;
+    isDragging = true;
+    overlay.style.transition = "none";
+  }
+
+  function handleMove(y: number) {
+    if (!isDragging) return;
+    const diffY = y - startY;
+    if (diffY > 0) {
+      overlay.style.transform = `translateY(${diffY}px)`;
+    } else {
+      overlay.style.transform = `translateY(0px)`;
+    }
+  }
+
+  function handleEnd(y: number) {
+    if (!isDragging) return;
+    isDragging = false;
+    
+    const diffY = y - startY;
+    overlay.style.transition = "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)";
+    
+    if (diffY > 120) {
+      overlay.style.transform = "";
+      overlay.classList.remove("active");
+    } else {
+      overlay.style.transform = "";
+    }
+  }
+
+  overlay.addEventListener("touchstart", (e: TouchEvent) => {
+    handleStart(e.touches[0].clientY, e.target as HTMLElement);
+  }, { passive: true });
+
+  overlay.addEventListener("touchmove", (e: TouchEvent) => {
+    if (!isDragging) return;
+    handleMove(e.touches[0].clientY);
+  }, { passive: true });
+
+  overlay.addEventListener("touchend", (e: TouchEvent) => {
+    if (!isDragging) return;
+    handleEnd(e.changedTouches[0].clientY);
+  });
+
+  overlay.addEventListener("mousedown", (e: MouseEvent) => {
+    handleStart(e.clientY, e.target as HTMLElement);
+  });
+
+  window.addEventListener("mousemove", (e: MouseEvent) => {
+    if (!isDragging) return;
+    handleMove(e.clientY);
+  });
+
+  window.addEventListener("mouseup", (e: MouseEvent) => {
+    if (!isDragging) return;
+    handleEnd(e.clientY);
+  });
+}
+
+// Tab Navigation Setup
 function setupNavigation() {
   const navItems = document.querySelectorAll(".nav-item, #btn-header-settings");
-  const views = document.querySelectorAll(".app-view");
 
   navItems.forEach(item => {
     item.addEventListener("click", () => {
       const targetId = item.getAttribute("data-target");
-      if (!targetId) return;
-
-      // Reset rescan notice if leaving scanner tab
-      if (targetId !== 'view-scan') {
-        cancelRescanState();
-      } else {
-        // If clicking scanner tab, reset scanner view to upload zone
-        resetScannerView(!!activeRescanPlantId);
-      }
-
-      // Close details overlay on tab switch
-      const detailsOverlay = document.getElementById("plant-detail-overlay") as HTMLDivElement;
-      if (detailsOverlay) detailsOverlay.classList.remove("active");
-
-      // Update nav class
-      navItems.forEach(n => n.classList.remove("active"));
-      item.classList.add("active");
-
-      // Show View
-      views.forEach(v => {
-        if (v.id === targetId) {
-          v.classList.add("active");
-        } else {
-          v.classList.remove("active");
-        }
-      });
+      if (targetId) switchTab(targetId);
     });
   });
 
@@ -420,10 +693,15 @@ function setupNavigation() {
   const emptyScanBtn = document.getElementById("btn-empty-scan");
   if (emptyScanBtn) {
     emptyScanBtn.addEventListener("click", () => {
-      const scanNavBtn = document.querySelector('.nav-scanner-btn') as HTMLButtonElement;
-      if (scanNavBtn) scanNavBtn.click();
+      switchTab("view-scan");
     });
   }
+
+  // Setup Touch Swipe Gestures for Mobile navigation
+  setupTabSwipeGestures();
+
+  // Setup Pull-to-Close gesture on Detail screen
+  setupPullToCloseGesture();
 }
 
 // ==========================================================================
@@ -1000,6 +1278,77 @@ function applyFontSize(size: string) {
   localStorage.setItem("app_font_size", size);
 }
 
+function setupThemeSelector() {
+  const themeButtons = document.querySelectorAll(".theme-btn");
+  
+  // Load saved theme on startup
+  const savedTheme = localStorage.getItem("app_theme") || "dark";
+  applyTheme(savedTheme);
+
+  themeButtons.forEach(btn => {
+    const theme = btn.getAttribute("data-theme");
+    if (theme === savedTheme) {
+      themeButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+
+    btn.addEventListener("click", () => {
+      const targetTheme = btn.getAttribute("data-theme") || "dark";
+      applyTheme(targetTheme);
+      
+      themeButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+}
+
+// Media listener for system theme preference changes
+let systemThemeMedia: MediaQueryList | null = null;
+function handleSystemThemeChange(e: MediaQueryListEvent) {
+  const isDark = e.matches;
+  const htmlEl = document.documentElement;
+  if (isDark) {
+    htmlEl.classList.remove("theme-light");
+    htmlEl.classList.add("theme-dark");
+  } else {
+    htmlEl.classList.remove("theme-dark");
+    htmlEl.classList.add("theme-light");
+  }
+}
+
+function applyTheme(theme: string) {
+  const htmlEl = document.documentElement;
+  localStorage.setItem("app_theme", theme);
+  
+  // Clean up existing media listener if any
+  if (systemThemeMedia) {
+    // @ts-ignore
+    systemThemeMedia.removeEventListener("change", handleSystemThemeChange);
+    systemThemeMedia = null;
+  }
+
+  if (theme === "system") {
+    systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    // @ts-ignore
+    systemThemeMedia.addEventListener("change", handleSystemThemeChange);
+    // Apply initial system preference
+    if (systemThemeMedia.matches) {
+      htmlEl.classList.remove("theme-light");
+      htmlEl.classList.add("theme-dark");
+    } else {
+      htmlEl.classList.remove("theme-dark");
+      htmlEl.classList.add("theme-light");
+    }
+  } else if (theme === "light") {
+    htmlEl.classList.remove("theme-dark");
+    htmlEl.classList.add("theme-light");
+  } else {
+    // Default is dark
+    htmlEl.classList.remove("theme-light");
+    htmlEl.classList.add("theme-dark");
+  }
+}
+
 function setupDisclaimerActions() {
   const overlay = document.getElementById("disclaimer-overlay");
   const moreBtn = document.getElementById("btn-disclaimer-more");
@@ -1047,59 +1396,102 @@ function setupUploadAndScanner() {
   const quickPicker = document.getElementById("quick-picker-section") as HTMLDivElement;
   const resultCard = document.getElementById("result-card") as HTMLDivElement;
   const scanStatusOverlay = document.getElementById("scan-status-text") as HTMLDivElement;
+  const addMoreBtn = document.getElementById("btn-add-more-photos") as HTMLButtonElement;
   
   const pickerButtons = document.querySelectorAll(".picker-btn");
 
-  // Helper to resize base64 images client-side
-  function resizeImage(base64Str: string, maxDim: number, callback: (resized: string) => void) {
-    const img = new Image();
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      if (width > height) {
-        if (width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        }
-      } else {
-        if (height > maxDim) {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
+  // Render scan thumbnails under preview image
+  function renderUploadThumbnails() {
+    const container = document.getElementById("scan-thumbnails-container");
+    if (!container) return;
+    container.innerHTML = "";
+
+    uploadedPhotos.forEach((photo, idx) => {
+      const thumb = document.createElement("div");
+      thumb.className = "scan-thumb-preview";
+      if (idx === activePhotoIndex) {
+        thumb.classList.add("active");
       }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, width, height);
-        callback(canvas.toDataURL("image/jpeg", 0.8));
-      } else {
-        callback(base64Str);
-      }
-    };
-    img.onerror = () => callback(base64Str);
-    img.src = base64Str;
+      thumb.style.backgroundImage = `url(${photo.thumbnail})`;
+
+      // Remove button
+      const removeBtn = document.createElement("div");
+      removeBtn.className = "scan-thumb-remove";
+      removeBtn.innerHTML = "×";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        uploadedPhotos.splice(idx, 1);
+        if (activePhotoIndex >= uploadedPhotos.length) {
+          activePhotoIndex = Math.max(0, uploadedPhotos.length - 1);
+        }
+        if (uploadedPhotos.length === 0) {
+          resetScannerView(!!activeRescanPlantId);
+        } else {
+          renderUploadThumbnails();
+          if (previewImg) previewImg.src = uploadedPhotos[activePhotoIndex].full;
+        }
+      });
+
+      thumb.appendChild(removeBtn);
+
+      thumb.addEventListener("click", () => {
+        activePhotoIndex = idx;
+        renderUploadThumbnails();
+        if (previewImg) previewImg.src = photo.full;
+      });
+
+      container.appendChild(thumb);
+    });
   }
 
   // Handle Drag & Drop / Click Upload (REAL LIVE BACKEND REQUEST)
   if (uploadZone && fileInput) {
-    uploadZone.addEventListener("click", () => fileInput.click());
-    fileInput.addEventListener("change", (e) => {
+    // Open file picker on dropzone click, but prevent double triggering if clicking child elements
+    uploadZone.addEventListener("click", (e) => {
+      if (e.target !== fileInput) {
+        fileInput.click();
+      }
+    });
+
+    if (addMoreBtn) {
+      addMoreBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      });
+    }
+
+    fileInput.addEventListener("change", async (e) => {
       const target = e.target as HTMLInputElement;
-      if (target.files && target.files[0]) {
-        const file = target.files[0];
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            const rawBase64 = event.target.result as string;
-            resizeImage(rawBase64, 1200, (resizedBase64) => {
-              customImageSrc = resizedBase64;
-              triggerLiveScanning(resizedBase64);
+      if (target.files && target.files.length > 0) {
+        const isFirstUpload = (uploadedPhotos.length === 0);
+        
+        for (let i = 0; i < target.files.length; i++) {
+          const file = target.files[i];
+          try {
+            // Client-side image optimizations (Canvas resizing)
+            const thumbBase64 = await resizeImageToDataUrl(file, 120, 0.7);
+            const fullBase64 = await resizeImageToDataUrl(file, 800, 0.85);
+            uploadedPhotos.push({
+              thumbnail: thumbBase64,
+              full: fullBase64
             });
+          } catch (err) {
+            console.error("Error optimizing file:", err);
           }
-        };
-        reader.readAsDataURL(file);
+        }
+
+        target.value = ""; // reset file input
+
+        if (uploadedPhotos.length > 0) {
+          if (isFirstUpload) {
+            activePhotoIndex = 0;
+            triggerLiveScanning();
+          } else {
+            activePhotoIndex = uploadedPhotos.length - 1;
+            renderUploadThumbnails();
+            if (previewImg) previewImg.src = uploadedPhotos[activePhotoIndex].full;
+          }
+        }
       }
     });
   }
@@ -1112,20 +1504,29 @@ function setupUploadAndScanner() {
       
       const preset = PRESET_PLANTS[presetName];
       if (preset) {
-        customImageSrc = null;
+        // Map preset image to uploadedPhotos
+        uploadedPhotos = [{
+          thumbnail: preset.image,
+          full: preset.image
+        }];
+        activePhotoIndex = 0;
         triggerScanning(preset.image, preset);
       }
     });
   });
 
   // Real-time backend analyzer request
-  function triggerLiveScanning(imgSrc: string) {
+  function triggerLiveScanning() {
+    if (uploadedPhotos.length === 0) return;
+    const imgSrc = uploadedPhotos[activePhotoIndex].full;
+
     uploadZone.classList.add("hidden");
     resultCard.classList.add("hidden");
     quickPicker.classList.add("hidden");
 
     previewImg.src = imgSrc;
     previewContainer.classList.remove("hidden");
+    renderUploadThumbnails();
 
     const statuses = [
       "Görsel yükleniyor...",
@@ -1194,7 +1595,6 @@ function setupUploadAndScanner() {
     })
     .catch(err => {
       console.warn("Backend API bağlantı hatası, simüle veriye geçiliyor:", err);
-      // Fallback to random preset offline simulation
       const keys = Object.keys(PRESET_PLANTS);
       const randomPresetKey = keys[Math.floor(Math.random() * keys.length)];
       const chosen = PRESET_PLANTS[randomPresetKey];
@@ -1236,6 +1636,7 @@ function setupUploadAndScanner() {
 
     previewImg.src = imgSrc;
     previewContainer.classList.remove("hidden");
+    renderUploadThumbnails();
 
     const statuses = [
       "Görsel yükleniyor...",
@@ -1375,96 +1776,113 @@ function setupGardenActions() {
       const originalText = addToGardenBtn.innerHTML;
       addToGardenBtn.innerHTML = "Kaydediliyor... ⏳";
 
-      // IF RE-SCANNING AN EXISTING PLANT
-      if (activeRescanPlantId) {
-        const plantId = activeRescanPlantId;
+      const plantId = activeRescanPlantId || 'plant_' + Date.now();
 
-        getImageUrl(activeScanTarget.image, plantId).then((imgUrl) => {
+      // Loop through all uploaded photos, upload to storage, and keep their thumbnail/full resolutions
+      const uploadPromises = uploadedPhotos.map((photo, index) => {
+        const uniqueId = `${plantId}_${Date.now()}_${index}`;
+        return getImageUrl(photo.full, uniqueId).then((url) => {
+          return {
+            thumbnail: photo.thumbnail,
+            full: url
+          };
+        });
+      });
+
+      Promise.all(uploadPromises).then((newImagesArray) => {
+        // IF RE-SCANNING AN EXISTING PLANT
+        if (activeRescanPlantId) {
           const plantRef = db.collection("users").doc(currentUserId)
             .collection("plants").doc(plantId);
 
-          const updatedPlantData = {
-            image: imgUrl,
-            needsWater: activeScanTarget!.sağlık < 85 && !activeScanTarget!.sorun.includes("Fazla sulama"),
-            lastWateredDaysAgo: activeScanTarget!.sorun.includes("Fazla sulama") ? 0 : activeScanTarget!.waterFrequencyDays + 1,
-            sağlık: activeScanTarget!.sağlık,
-            sorun: activeScanTarget!.sorun,
-            yorum: activeScanTarget!.yorum || "",
-            öneri: activeScanTarget!.öneri || ""
-          };
+          return plantRef.get().then((docSnapshot: any) => {
+            let existingImages: OptimizedImage[] = [];
+            if (docSnapshot.exists) {
+              const data = docSnapshot.data();
+              existingImages = data.images || [];
+            }
+            const combinedImages = [...existingImages, ...newImagesArray];
+            const primaryImageUrl = combinedImages.length > 0 ? combinedImages[combinedImages.length - 1].full : "/monstera.png";
 
-          return plantRef.update(updatedPlantData).then(() => {
-            const reportId = 'rep_' + Date.now();
-            return plantRef.collection("reports").doc(reportId).set({
-              id: reportId,
-              date: dateStr,
+            const updatedPlantData = {
+              image: primaryImageUrl,
+              images: combinedImages,
+              needsWater: activeScanTarget!.sağlık < 85 && !activeScanTarget!.sorun.includes("Fazla sulama"),
+              lastWateredDaysAgo: activeScanTarget!.sorun.includes("Fazla sulama") ? 0 : activeScanTarget!.waterFrequencyDays + 1,
               sağlık: activeScanTarget!.sağlık,
               sorun: activeScanTarget!.sorun,
               yorum: activeScanTarget!.yorum || "",
-              öneri: activeScanTarget!.öneri || "",
-              image: imgUrl,
-              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              öneri: activeScanTarget!.öneri || ""
+            };
+
+            return plantRef.update(updatedPlantData).then(() => {
+              const reportId = 'rep_' + Date.now();
+              return plantRef.collection("reports").doc(reportId).set({
+                id: reportId,
+                date: dateStr,
+                sağlık: activeScanTarget!.sağlık,
+                sorun: activeScanTarget!.sorun,
+                yorum: activeScanTarget!.yorum || "",
+                öneri: activeScanTarget!.öneri || "",
+                image: primaryImageUrl,
+                images: newImagesArray, // Save this scan's images specifically in the report
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              });
+            }).then(() => {
+              // Save to global archive
+              const archiveRef = db.collection("analyses_archive").doc();
+              return archiveRef.set({
+                analysisId: archiveRef.id,
+                userId: currentUserId,
+                plantSpecies: activeScanTarget!.bitki,
+                healthScore: activeScanTarget!.sağlık,
+                detectedIssue: activeScanTarget!.sorun,
+                comment: activeScanTarget!.yorum,
+                recommendation: activeScanTarget!.öneri,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                dateStr: dateStr,
+                season: getSeason(),
+                location: userLocation || { city: "Bilinmiyor", region: "Bilinmiyor", country: "Bilinmiyor", latitude: 0, longitude: 0 },
+                imageUrl: primaryImageUrl
+              });
             });
           }).then(() => {
-            // Save to global archive
-            const archiveRef = db.collection("analyses_archive").doc();
-            return archiveRef.set({
-              analysisId: archiveRef.id,
-              userId: currentUserId,
-              plantSpecies: activeScanTarget!.bitki,
-              healthScore: activeScanTarget!.sağlık,
-              detectedIssue: activeScanTarget!.sorun,
-              comment: activeScanTarget!.yorum,
-              recommendation: activeScanTarget!.öneri,
-              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-              dateStr: dateStr,
-              season: getSeason(),
-              location: userLocation || { city: "Bilinmiyor", region: "Bilinmiyor", country: "Bilinmiyor", latitude: 0, longitude: 0 },
-              imageUrl: imgUrl
-            });
+            addToGardenBtn.disabled = false;
+            addToGardenBtn.innerHTML = originalText;
+            
+            showToast("Rapor Kaydedildi 📋", "Yeni sağlık raporu başarıyla kaydedildi!", "success");
+            
+            // Reset scanner state
+            resultCard.classList.add("hidden");
+            uploadZone.classList.remove("hidden");
+            quickPicker.classList.remove("hidden");
+            activeScanTarget = null;
+            
+            const targetPlantId = plantId;
+            cancelRescanState();
+
+            // Open details overlay for this plant immediately
+            showPlantDetails(targetPlantId);
           });
-        }).then(() => {
-          addToGardenBtn.disabled = false;
-          addToGardenBtn.innerHTML = originalText;
-          
-          showToast("Rapor Kaydedildi 📋", "Yeni sağlık raporu başarıyla kaydedildi!", "success");
-          
-          // Reset scanner state
-          resultCard.classList.add("hidden");
-          uploadZone.classList.remove("hidden");
-          quickPicker.classList.remove("hidden");
-          activeScanTarget = null;
-          
-          const targetPlantId = plantId;
-          cancelRescanState();
+        } 
+        // IF ADDING A NEW PLANT
+        else {
+          const nicknameInput = document.getElementById("nickname-input") as HTMLInputElement;
+          let nickname = nicknameInput ? nicknameInput.value.trim() : "";
+          if (!nickname) {
+            nickname = activeScanTarget!.bitki;
+          }
 
-          // Open details overlay for this plant immediately
-          showPlantDetails(targetPlantId);
-        }).catch((err: any) => {
-          console.error("Error updating plant report:", err);
-          addToGardenBtn.disabled = false;
-          addToGardenBtn.innerHTML = originalText;
-          showToast("Hata 🚨", "İşlem sırasında bir hata oluştu.", "danger");
-        });
-      } 
-      // IF ADDING A NEW PLANT
-      else {
-        const nicknameInput = document.getElementById("nickname-input") as HTMLInputElement;
-        let nickname = nicknameInput ? nicknameInput.value.trim() : "";
-        if (!nickname) {
-          nickname = activeScanTarget.bitki;
-        }
+          const primaryImageUrl = newImagesArray.length > 0 ? newImagesArray[0].full : "/monstera.png";
 
-        const plantId = 'plant_' + Date.now();
-
-        getImageUrl(activeScanTarget.image, plantId).then((imgUrl) => {
           const plantRef = db.collection("users").doc(currentUserId)
             .collection("plants").doc(plantId);
 
           const newPlantData = {
             nickname: nickname,
             bitki: activeScanTarget!.bitki,
-            image: imgUrl,
+            image: primaryImageUrl,
+            images: newImagesArray,
             addedDate: dateStr,
             needsWater: activeScanTarget!.sağlık < 85 && !activeScanTarget!.sorun.includes("Fazla sulama"),
             waterFrequencyDays: activeScanTarget!.waterFrequencyDays,
@@ -1486,7 +1904,8 @@ function setupGardenActions() {
               sorun: activeScanTarget!.sorun,
               yorum: activeScanTarget!.yorum || "",
               öneri: activeScanTarget!.öneri || "",
-              image: imgUrl,
+              image: primaryImageUrl,
+              images: newImagesArray,
               createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
           }).then(() => {
@@ -1504,31 +1923,33 @@ function setupGardenActions() {
               dateStr: dateStr,
               season: getSeason(),
               location: userLocation || { city: "Bilinmiyor", region: "Bilinmiyor", country: "Bilinmiyor", latitude: 0, longitude: 0 },
-              imageUrl: imgUrl
+              imageUrl: primaryImageUrl
             });
+          }).then(() => {
+            addToGardenBtn.disabled = false;
+            addToGardenBtn.innerHTML = originalText;
+            
+            showToast("Bahçeye Eklendi 🌱", "Bitkiniz bahçenize başarıyla eklendi!", "success");
+            
+            // Reset scanner state
+            resultCard.classList.add("hidden");
+            uploadZone.classList.remove("hidden");
+            quickPicker.classList.remove("hidden");
+            activeScanTarget = null;
+            
+            const targetPlantId = plantId;
+            cancelRescanState();
+
+            // Open details overlay for this plant immediately
+            showPlantDetails(targetPlantId);
           });
-        }).then(() => {
-          addToGardenBtn.disabled = false;
-          addToGardenBtn.innerHTML = originalText;
-
-          showToast("Bahçeye Eklendi 🌿", `${nickname} başarıyla bahçenize eklendi!`, "success");
-
-          // Reset scanner
-          resultCard.classList.add("hidden");
-          uploadZone.classList.remove("hidden");
-          quickPicker.classList.remove("hidden");
-          activeScanTarget = null;
-
-          // Go to Garden Tab
-          const gardenNavBtn = document.querySelector('[data-target="view-garden"]') as HTMLButtonElement;
-          if (gardenNavBtn) gardenNavBtn.click();
-        }).catch((err: any) => {
-          console.error("Error saving plant to Firestore:", err);
-          addToGardenBtn.disabled = false;
-          addToGardenBtn.innerHTML = originalText;
-          showToast("Hata 🚨", "İşlem sırasında bir hata oluştu.", "danger");
-        });
-      }
+        }
+      }).catch((err: any) => {
+        console.error("Error saving plant to Firestore:", err);
+        addToGardenBtn.disabled = false;
+        addToGardenBtn.innerHTML = originalText;
+        showToast("Hata 🚨", "İşlem sırasında bir hata oluştu.", "danger");
+      });
     });
   }
 }
@@ -1563,10 +1984,7 @@ function setupDetailsOverlay() {
       overlay.classList.remove("active");
 
       // Go to scanner tab
-      const scanNavBtn = document.querySelector('.nav-scanner-btn') as HTMLButtonElement;
-      if (scanNavBtn) {
-        scanNavBtn.click();
-      }
+      switchTab("view-scan");
 
       // Show alert/notice on upload zone
       const uploadHeader = document.querySelector('#upload-zone h4');
@@ -1630,9 +2048,10 @@ function setupDetailsOverlay() {
 }
 
 // Carousel State
-let carouselCurrentIndex = 0;
-let carouselReportsCount = 0;
-let carouselReports: AnalysisReport[] = [];
+let carouselCurrentIndex = 0; // index of the active image slide inside the active report
+let selectedReportIndex = 0;  // index of the active report in history
+let activeReportImages: OptimizedImage[] = []; // images of the active report
+let carouselReports: AnalysisReport[] = []; // all reports of the plant
 
 // Touch/Mouse event handling for details image carousel
 function setupCarouselGestures() {
@@ -1644,7 +2063,7 @@ function setupCarouselGestures() {
   let isDragging = false;
 
   // Reset transforms
-  wrapper.style.transform = `translateX(0px)`;
+  wrapper.style.transform = `translateX(-${carouselCurrentIndex * 100}%)`;
   
   // Clean event listeners first by clone-replacing the element or binding to container
   const newContainer = container.cloneNode(true) as HTMLDivElement;
@@ -1668,15 +2087,15 @@ function setupCarouselGestures() {
     prevBtn.onclick = (e) => {
       e.stopPropagation();
       if (carouselCurrentIndex > 0) {
-        slideToReport(carouselCurrentIndex - 1);
+        slideToImage(carouselCurrentIndex - 1);
       }
     };
   }
   if (nextBtn) {
     nextBtn.onclick = (e) => {
       e.stopPropagation();
-      if (carouselCurrentIndex < carouselReportsCount - 1) {
-        slideToReport(carouselCurrentIndex + 1);
+      if (carouselCurrentIndex < activeReportImages.length - 1) {
+        slideToImage(carouselCurrentIndex + 1);
       }
     };
   }
@@ -1684,7 +2103,7 @@ function setupCarouselGestures() {
   const dots = document.querySelectorAll(".carousel-dot");
   dots.forEach((dot, idx) => {
     dot.addEventListener("click", () => {
-      slideToReport(idx);
+      slideToImage(idx);
     });
   });
 
@@ -1713,12 +2132,12 @@ function setupCarouselGestures() {
     
     freshWrapper.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
     const threshold = 40; // swipe threshold in pixels
-    if (diff < -threshold && carouselCurrentIndex < carouselReportsCount - 1) {
-      slideToReport(carouselCurrentIndex + 1);
+    if (diff < -threshold && carouselCurrentIndex < activeReportImages.length - 1) {
+      slideToImage(carouselCurrentIndex + 1);
     } else if (diff > threshold && carouselCurrentIndex > 0) {
-      slideToReport(carouselCurrentIndex - 1);
+      slideToImage(carouselCurrentIndex - 1);
     } else {
-      slideToReport(carouselCurrentIndex); // snap back
+      slideToImage(carouselCurrentIndex); // snap back
     }
   }
 
@@ -1745,34 +2164,69 @@ function setupCarouselGestures() {
 
     freshWrapper.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
     const threshold = 40;
-    if (diff < -threshold && carouselCurrentIndex < carouselReportsCount - 1) {
-      slideToReport(carouselCurrentIndex + 1);
+    if (diff < -threshold && carouselCurrentIndex < activeReportImages.length - 1) {
+      slideToImage(carouselCurrentIndex + 1);
     } else if (diff > threshold && carouselCurrentIndex > 0) {
-      slideToReport(carouselCurrentIndex - 1);
+      slideToImage(carouselCurrentIndex - 1);
     } else {
-      slideToReport(carouselCurrentIndex);
+      slideToImage(carouselCurrentIndex);
     }
   }
 }
 
-// Slide to specific report index
-function slideToReport(index: number) {
+// Slide to specific image index of active report
+function slideToImage(index: number) {
   const wrapper = document.getElementById("detail-carousel-wrapper");
   if (!wrapper) return;
 
-  carouselCurrentIndex = index;
-  wrapper.style.transform = `translateX(-${index * 100}%)`;
+  carouselCurrentIndex = Math.max(0, Math.min(index, activeReportImages.length - 1));
+  wrapper.style.transform = `translateX(-${carouselCurrentIndex * 100}%)`;
 
   // Update pagination dots active state
   const dots = document.querySelectorAll(".carousel-dot");
   dots.forEach((dot, idx) => {
-    if (idx === index) dot.classList.add("active");
+    if (idx === carouselCurrentIndex) dot.classList.add("active");
     else dot.classList.remove("active");
   });
+}
 
-  // Get active report
+// Select a specific report index in history
+function selectReport(index: number) {
+  if (index < 0 || index >= carouselReports.length) return;
+  selectedReportIndex = index;
   const rep = carouselReports[index];
+
+  // Populate activeReportImages
+  activeReportImages = rep.images && rep.images.length > 0 ? rep.images : [{ thumbnail: rep.image || "/monstera.png", full: rep.image || "/monstera.png" }];
   
+  // Render Carousel Slides
+  const carouselWrapper = document.getElementById("detail-carousel-wrapper");
+  const carouselDots = document.getElementById("detail-carousel-dots");
+  
+  if (carouselWrapper) {
+    carouselWrapper.innerHTML = "";
+    activeReportImages.forEach(img => {
+      const slide = document.createElement("div");
+      slide.className = "carousel-slide";
+      slide.style.backgroundImage = `url('${img.full || img.thumbnail}')`;
+      carouselWrapper.appendChild(slide);
+    });
+  }
+
+  // Render Pagination Dots
+  if (carouselDots) {
+    carouselDots.innerHTML = "";
+    activeReportImages.forEach((_, idx) => {
+      const dot = document.createElement("div");
+      dot.className = "carousel-dot";
+      if (idx === 0) dot.classList.add("active");
+      carouselDots.appendChild(dot);
+    });
+  }
+
+  // Re-bind dot click events and gestures
+  setupCarouselGestures();
+
   // Update texts and badges
   const detailHealthScore = document.getElementById("detail-health-score");
   const detailHealthBadge = document.getElementById("detail-health-badge-container");
@@ -1804,6 +2258,15 @@ function slideToReport(index: number) {
       node.classList.remove("active");
     }
   });
+
+  // Reset to first slide/image
+  const wrapper = document.getElementById("detail-carousel-wrapper");
+  if (wrapper) {
+    wrapper.style.transition = "none";
+    slideToImage(0);
+    wrapper.offsetHeight; // force reflow
+    wrapper.style.transition = "transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+  }
 }
 
 // Show plant detail page overlay
@@ -1837,7 +2300,8 @@ function showPlantDetails(plantId: string) {
           sorun: data.sorun || "Bilinmiyor",
           yorum: data.yorum || "",
           öneri: data.öneri || "",
-          image: data.image || plant.image
+          image: data.image || plant.image,
+          images: data.images
         });
       });
 
@@ -1849,48 +2313,20 @@ function showPlantDetails(plantId: string) {
           sorun: plant.sorun,
           yorum: plant.yorum || "",
           öneri: plant.öneri || "",
-          image: plant.image
+          image: plant.image,
+          images: plant.images
         });
       }
 
       plant.analyses = reports;
       carouselReports = reports;
-      carouselReportsCount = reports.length;
       
-      // Select the latest report as default initially
-      carouselCurrentIndex = reports.length - 1;
+      const latestReportIdx = reports.length - 1;
 
       // Bind basic values
       if (detailNickname) detailNickname.textContent = plant.nickname;
       if (detailSpecies) detailSpecies.textContent = plant.bitki;
       if (detailAddedDate) detailAddedDate.textContent = plant.addedDate;
-
-      // Render Carousel Slides
-      const carouselWrapper = document.getElementById("detail-carousel-wrapper");
-      const carouselDots = document.getElementById("detail-carousel-dots");
-      if (carouselWrapper) {
-        carouselWrapper.innerHTML = "";
-        reports.forEach(rep => {
-          const slide = document.createElement("div");
-          slide.className = "carousel-slide";
-          slide.style.backgroundImage = `url('${rep.image || plant.image}')`;
-          carouselWrapper.appendChild(slide);
-        });
-      }
-
-      // Render Pagination Dots
-      if (carouselDots) {
-        carouselDots.innerHTML = "";
-        reports.forEach((_, idx) => {
-          const dot = document.createElement("div");
-          dot.className = "carousel-dot";
-          if (idx === carouselCurrentIndex) dot.classList.add("active");
-          carouselDots.appendChild(dot);
-        });
-      }
-
-      // Setup gesture events and nav buttons
-      setupCarouselGestures();
 
       // Bind plant ID to rescan and delete buttons
       if (rescanBtn) {
@@ -1938,7 +2374,6 @@ function showPlantDetails(plantId: string) {
         reports.forEach((rep, index) => {
           const node = document.createElement("div");
           node.className = "timeline-node";
-          if (index === carouselCurrentIndex) node.classList.add("active");
 
           let labelText = `Sağlık Puanı: %${rep.sağlık}`;
           if (index === 0) {
@@ -1954,22 +2389,15 @@ function showPlantDetails(plantId: string) {
 
           // Timeline node click event
           node.addEventListener("click", () => {
-            slideToReport(index);
+            selectReport(index);
           });
 
           detailTimeline.appendChild(node);
         });
       }
 
-      // Slide to the latest report initially without animation (instant snap)
-      const wrapper = document.getElementById("detail-carousel-wrapper");
-      if (wrapper) {
-        wrapper.style.transition = "none";
-        slideToReport(carouselCurrentIndex);
-        // Force reflow
-        wrapper.offsetHeight;
-        wrapper.style.transition = "transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
-      }
+      // Initialize the default selected report (latest one)
+      selectReport(latestReportIdx);
 
       // Active overlay sliding transition
       overlay.classList.add("active");

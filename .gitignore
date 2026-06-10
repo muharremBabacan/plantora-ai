@@ -1,3 +1,6 @@
+# Root Node Modules
+node_modules/
+
 # Prototype (Node / Vite)
 prototype/node_modules/
 prototype/dist/

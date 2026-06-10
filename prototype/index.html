@@ -84,8 +84,9 @@
         <div class="header-right-actions">
           <div class="connection-pill">Yapay Zeka Aktif</div>
           <button class="header-btn" id="btn-header-settings" data-target="view-settings" aria-label="Ayarlar">
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
           </button>
         </div>
@@ -158,8 +159,16 @@
               <div class="upload-icon">📸</div>
               <h4>Bitkinizi Analiz Edin 🌿</h4>
               <p>Bitkinin yaprağını veya gövdesini net gösterecek şekilde yükleyin</p>
+              
+              <!-- Guidelines -->
+              <div class="scan-guidelines">
+                <div class="guideline-item">💡 <strong>Işık:</strong> Ortamın aydınlık olmasına dikkat edin.</div>
+                <div class="guideline-item">🪴 <strong>Toprak:</strong> Bitkinin toprağı da kadraja girsin.</div>
+                <div class="guideline-item">🔍 <strong>Odak:</strong> Hastalıklı bölgeyi belirgin ve net çekin.</div>
+              </div>
+
               <span class="upload-btn">Dosya Seç</span>
-              <input type="file" id="file-input" accept="image/*" style="display: none;">
+              <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
             </div>
 
             <!-- Preview Area with Scanning Laser -->
@@ -167,6 +176,11 @@
               <img src="" alt="Taranan Bitki" id="scan-preview-img">
               <div class="laser-scanner" id="laser-scanner"></div>
               <div class="scan-status-overlay" id="scan-status-text">Analiz ediliyor...</div>
+              
+              <div class="scan-thumbnails-wrapper">
+                <div class="scan-thumbnails-container" id="scan-thumbnails-container"></div>
+                <button class="btn-add-more-thumb" id="btn-add-more-photos" type="button">+ Ekle</button>
+              </div>
             </div>
 
             <!-- Simulation Quick Picker (MVP Feature) -->
@@ -364,6 +378,17 @@
             </div>
           </div>
 
+          <!-- Theme Selection Section -->
+          <div class="settings-card">
+            <h3>🎨 Uygulama Teması</h3>
+            <p class="section-desc">Uygulama görünümünü açık, koyu veya sistem tercihine göre ayarlayın:</p>
+            <div class="theme-picker">
+              <button class="theme-btn" data-theme="system">Sistem</button>
+              <button class="theme-btn" data-theme="light">Açık</button>
+              <button class="theme-btn" data-theme="dark">Koyu</button>
+            </div>
+          </div>
+
           <!-- Google Auth Section -->
           <div class="settings-card" id="google-auth-card">
             <h3>🔐 Hesap Güvenliği & Google</h3>
@@ -542,28 +567,59 @@
       <!-- App Bottom Navigation Tab Bar -->
       <nav class="app-nav">
         <button class="nav-item active" data-target="view-garden">
-          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24">
-            <path fill="currentColor" d="M12 3L4 9v12h5v-7h6v7h5V9z"/>
+          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Center stem -->
+            <path d="M12 22V12" />
+            <!-- Side stems -->
+            <path d="M12 17c-2.5-1-4.5-3.5-4.5-6.5" />
+            <path d="M12 17c2.5-1 4.5-3.5 4.5-6.5" />
+            <!-- Center leaf -->
+            <path d="M12 12c1.5-2 1.5-4.5 0-6-1.5 1.5-1.5 4 0 6z" />
+            <!-- Left leaf -->
+            <path d="M7.5 10.5c-.8-1.8.2-4.2 2-5 1 1.5.5 3.8-2 5z" />
+            <!-- Right leaf -->
+            <path d="M16.5 10.5c.8-1.8-.2-4.2-2-5-1 1.5-.5 3.8 2 5z" />
+            <!-- Base tech nodes -->
+            <path d="M12 20c-2.5 0-3.5 1.5-5 1.5" />
+            <circle cx="5.5" cy="21.5" r="1.2" />
+            <path d="M12 20c2.5 0 3.5 1.5 5 1.5" />
+            <circle cx="18.5" cy="21.5" r="1.2" />
+            <!-- Middle connection dot -->
+            <circle cx="12" cy="14.5" r="1" />
           </svg>
           <span>Bahçem</span>
         </button>
         
         <button class="nav-item nav-scanner-btn" data-target="view-scan">
           <div class="nav-scanner-circle">
-            <svg class="nav-icon" viewBox="0 0 24 24" width="28" height="28" style="color: white; margin: 0;">
-              <path fill="currentColor" d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+            <svg class="nav-icon" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin: 0;">
+              <!-- Scanner corners -->
+              <path d="M6 9V6a1 1 0 0 1 1-1h3" />
+              <path d="M14 5h3a1 1 0 0 1 1 1v3" />
+              <path d="M18 15v3a1 1 0 0 1-1 1h-3" />
+              <path d="M10 19H7a1 1 0 0 1-1-1v-3" />
+              <!-- Central leaf slanted -->
+              <path d="M9 15c2.5-4 7-4.5 8.5-6.5-2 1.5-2.5 6-6.5 8.5z" />
+              <path d="M9 15l4.5-4.5" />
             </svg>
           </div>
-          <span>Tara</span>
+          <span>AI Analiz</span>
         </button>
 
         <button class="nav-item" data-target="view-calendar">
-          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24">
-            <path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+          <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Leaf outline slanted up-right -->
+            <path d="M14.5 5.5c-4.5.5-7 4-7.5 8.5.5 2.5 2 4.5 4.5 4s6-4 6.5-8.5c-1-1-2.5-3.5-3.5-4z" />
+            <path d="M7 14c-1.5-.5-2.5-2-2-3.5" />
+            <circle cx="4.5" cy="9.5" r="1" />
+            <!-- Clock overlay bottom right -->
+            <circle cx="17.5" cy="17.5" r="4.5" />
+            <path d="M17.5 15v2.5h1.5" />
+            <!-- Sparkle at top right -->
+            <path d="M19.5 5l.5.5M19 5.5h1M19.5 6v-1" />
           </svg>
-          <span>Takvim</span>
+          <span>AI Bakım</span>
         </button>
-
       </nav>
 
       <!-- Custom Premium Notification Toast -->
