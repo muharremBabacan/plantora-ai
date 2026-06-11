@@ -173,6 +173,68 @@ function saveUserRecord(userId: string) {
   }).catch((err: any) => console.error("User record error:", err));
 }
 
+let hasRunReset = false;
+async function resetDatabase() {
+  if (hasRunReset) return;
+  hasRunReset = true;
+  console.log("WIPING DATABASE... STARTING FROM SCRATCH...");
+  try {
+    // 1. Delete all users and their subcollections
+    const usersSnapshot = await db.collection("users").get();
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      console.log(`Deleting user data for: ${userId}`);
+      
+      const plantsSnapshot = await db.collection("users").doc(userId).collection("plants").get();
+      for (const plantDoc of plantsSnapshot.docs) {
+        const plantId = plantDoc.id;
+        
+        // Delete reports
+        const reportsSnapshot = await db.collection("users").doc(userId).collection("plants").doc(plantId).collection("reports").get();
+        for (const reportDoc of reportsSnapshot.docs) {
+          await db.collection("users").doc(userId).collection("plants").doc(plantId).collection("reports").doc(reportDoc.id).delete();
+        }
+        
+        // Delete schedules
+        const schedulesSnapshot = await db.collection("users").doc(userId).collection("plants").doc(plantId).collection("schedules").get();
+        for (const schedDoc of schedulesSnapshot.docs) {
+          await db.collection("users").doc(userId).collection("plants").doc(plantId).collection("schedules").doc(schedDoc.id).delete();
+        }
+        
+        // Delete plant doc
+        await db.collection("users").doc(userId).collection("plants").doc(plantId).delete();
+      }
+      
+      // Delete user doc
+      await db.collection("users").doc(userId).delete();
+    }
+    
+    // 2. Delete all pairings
+    const pairingsSnapshot = await db.collection("pairings").get();
+    for (const pairingDoc of pairingsSnapshot.docs) {
+      await db.collection("pairings").doc(pairingDoc.id).delete();
+    }
+    
+    // 3. Delete all analyses archives
+    const archiveSnapshot = await db.collection("analyses_archive").get();
+    for (const archiveDoc of archiveSnapshot.docs) {
+      await db.collection("analyses_archive").doc(archiveDoc.id).delete();
+    }
+    
+    console.log("DATABASE WIPE COMPLETED successfully! Database is now empty and fresh.");
+    
+    // Sign out and clear local storage to complete the fresh start
+    auth.signOut().then(() => {
+      localStorage.clear();
+      console.log("Cleared localStorage and signed out.");
+      showToast("Sıfırlandı 🧹", "Tüm veriler temizlendi, sıfırdan başlanıyor!", "success");
+    });
+  } catch (err) {
+    console.error("Error during database wipe:", err);
+  }
+}
+
+
 async function getImageUrl(imageSrc: string, plantId: string): Promise<string> {
   if (imageSrc && imageSrc.startsWith("data:image")) {
     try {
@@ -346,9 +408,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Fetch geolocation in the background (non-blocking)
   fetchUserLocation();
 
+
+
   // Register Auth Observer IMMEDIATELY on startup
   auth.onAuthStateChanged((user: any) => {
     if (user) {
+      // Database reset disabled (cleanup completed)
+      // resetDatabase();
       // Use paired user ID if it exists in localStorage, otherwise use authenticated user's UID
       const savedPairedId = localStorage.getItem("paired_user_id");
       const targetUserId = savedPairedId || user.uid;
@@ -374,8 +440,32 @@ document.addEventListener("DOMContentLoaded", () => {
           listenToGarden(currentUserId);
         });
       } else {
-        currentUserId = targetUserId;
-        saveUserRecord(currentUserId);
+        const localEmail = localStorage.getItem("local_email");
+        if (!savedPairedId && localEmail) {
+          db.collection("users").where("email", "==", localEmail.trim()).get().then((snapshot: any) => {
+            let matchedUid = targetUserId;
+            if (!snapshot.empty) {
+              matchedUid = snapshot.docs[0].id;
+              console.log(`Matching profile found by email on startup: ${matchedUid}`);
+              localStorage.setItem("paired_user_id", matchedUid);
+            }
+            proceedWithUser(matchedUid);
+          }).catch((err: any) => {
+            console.warn("Startup email profile lookup failed:", err);
+            proceedWithUser(targetUserId);
+          });
+        } else {
+          proceedWithUser(targetUserId);
+        }
+      }
+
+      function proceedWithUser(uid: string) {
+        currentUserId = uid;
+        // Skip saveUserRecord on startup for anonymous users to prevent empty ghost profiles
+        const currentUser = auth.currentUser;
+        if (currentUser && !currentUser.isAnonymous) {
+          saveUserRecord(currentUserId);
+        }
         loadUserSettings(currentUserId);
         listenToGarden(currentUserId);
       }
@@ -801,6 +891,12 @@ function loadUserSettings(userId: string) {
     if (doc.exists) {
       const data = doc.data();
       
+      // Cache settings in localStorage
+      if (data.name) localStorage.setItem("local_name", data.name);
+      if (data.email) localStorage.setItem("local_email", data.email);
+      if (data.phone) localStorage.setItem("local_phone", data.phone);
+      if (data.avatarId) localStorage.setItem("local_avatarId", data.avatarId);
+
       hasAcceptedTermsLocal = data.hasAcceptedTerms || (localStorage.getItem("hasAcceptedTerms") === "true");
       if (hasAcceptedTermsLocal && disclaimer) {
         disclaimer.classList.add("hidden");
@@ -908,7 +1004,7 @@ function loadUserSettings(userId: string) {
 }
 
 function setupSettingsActions() {
-  const saveBtn = document.getElementById("btn-save-settings");
+  const saveBtn = document.getElementById("btn-save-settings") as HTMLButtonElement;
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
       const nameInput = document.getElementById("settings-name-input") as HTMLInputElement;
@@ -923,21 +1019,75 @@ function setupSettingsActions() {
       const emailNotifications = toggleEmail ? toggleEmail.checked : true;
       const smsNotifications = toggleSms ? toggleSms.checked : false;
 
-      db.collection("users").doc(currentUserId).update({
-        name,
-        email,
-        phone,
-        avatarId: selectedAvatarId,
-        emailNotifications,
-        smsNotifications,
-        lastActiveAt: firebase.firestore.FieldValue.serverTimestamp()
-      }).then(() => {
-        showToast("Ayarlar Kaydedildi 💾", "Profil ayarlarınız başarıyla güncellendi!", "success");
-        const headerName = document.getElementById("profile-display-name");
-        if (headerName) headerName.textContent = name || "Misafir Kullanıcı";
+      if (!email) {
+        showToast("Hata ⚠️", "Profil oluşturmak/kaydetmek için lütfen e-posta adresi girin.", "warning");
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.innerText = "Kaydediliyor... ⏳";
+
+      // Check if this email is already registered to another user account
+      db.collection("users").where("email", "==", email).get().then((snapshot: any) => {
+        let existingUserDoc: any = null;
+        snapshot.forEach((doc: any) => {
+          if (doc.id !== currentUserId) {
+            existingUserDoc = doc;
+          }
+        });
+
+        if (existingUserDoc) {
+          // Email exists on another account! Merge and switch
+          const targetUid = existingUserDoc.id;
+          showToast("Profil Bulundu 🔑", "Bu e-posta adresiyle eşleşen profil yüklendi.", "warning");
+          
+          return mergeAndDestroyUser(currentUserId, targetUid).then(() => {
+            localStorage.setItem("paired_user_id", targetUid);
+            currentUserId = targetUid;
+            
+            // Cache in localStorage
+            localStorage.setItem("local_name", name || existingUserDoc.data().name || "");
+            localStorage.setItem("local_email", email);
+            localStorage.setItem("local_phone", phone || existingUserDoc.data().phone || "");
+            localStorage.setItem("local_avatarId", selectedAvatarId);
+
+            loadUserSettings(currentUserId);
+            listenToGarden(currentUserId);
+
+            showToast("Giriş Başarılı! 🎉", "Profiliniz ve bahçeniz yüklendi.", "success");
+            saveBtn.disabled = false;
+            saveBtn.innerText = "Ayarları Kaydet 💾";
+          });
+        } else {
+          // Fresh settings update for current account
+          saveUserRecord(currentUserId);
+          return db.collection("users").doc(currentUserId).set({
+            name,
+            email,
+            phone,
+            avatarId: selectedAvatarId,
+            emailNotifications,
+            smsNotifications,
+            lastActiveAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true }).then(() => {
+            // Cache locally
+            localStorage.setItem("local_name", name);
+            localStorage.setItem("local_email", email);
+            localStorage.setItem("local_phone", phone);
+            localStorage.setItem("local_avatarId", selectedAvatarId);
+
+            showToast("Ayarlar Kaydedildi 💾", "Profil ayarlarınız başarıyla güncellendi!", "success");
+            const headerName = document.getElementById("profile-display-name");
+            if (headerName) headerName.textContent = name || "Misafir Kullanıcı";
+            saveBtn.disabled = false;
+            saveBtn.innerText = "Ayarları Kaydet 💾";
+          });
+        }
       }).catch((err: any) => {
-        console.error("Save settings error:", err);
-        showToast("Hata 🚨", "Ayarlar kaydedilemedi.", "danger");
+        console.error("Save settings check/save error:", err);
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Ayarları Kaydet 💾";
+        showToast("Hata 🚨", "Ayarlar kaydedilemedi: " + err.message, "danger");
       });
     });
   }
@@ -1049,11 +1199,27 @@ function setupDeviceSync() {
         return;
       }
 
-      // If pairing code already exists, just show it!
+      // If pairing code already exists, write/refresh it in the pairings collection!
       if (myPairingCode) {
-        if (codeVal) codeVal.textContent = myPairingCode;
-        if (codeDisplay) codeDisplay.classList.remove("hidden");
-        showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan bu kodu girerek bağlanabilirsiniz.", "success");
+        generateBtn.disabled = true;
+        generateBtn.innerText = "Kod Aktifleştiriliyor... ⏳";
+        
+        saveUserRecord(currentUserId);
+        db.collection("pairings").doc(myPairingCode).set({
+          uid: currentUserId,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => {
+          if (codeVal) codeVal.textContent = myPairingCode;
+          if (codeDisplay) codeDisplay.classList.remove("hidden");
+          generateBtn.disabled = false;
+          generateBtn.innerText = "Eşleşme Kodunu Göster 🔑";
+          showToast("Eşleşme Kodu Hazır 🔑", "Telefonunuzdan bu kodu girerek bağlanabilirsiniz.", "success");
+        }).catch((err: any) => {
+          console.error("Firestore pairing refresh failed:", err);
+          generateBtn.disabled = false;
+          generateBtn.innerText = "Eşleşme Kodunu Göster 🔑";
+          showToast("Hata 🚨", "Eşleşme kodu aktifleştirilemedi: " + err.message, "danger");
+        });
         return;
       }
 
@@ -1062,6 +1228,9 @@ function setupDeviceSync() {
 
       // Generate random 6-digit code
       const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Ensure user record exists
+      saveUserRecord(currentUserId);
 
       // Write pairing document to public pairings collection
       db.collection("pairings").doc(code).set({
@@ -1170,6 +1339,11 @@ function setupDeviceSync() {
   if (disconnectBtn) {
     disconnectBtn.addEventListener("click", () => {
       localStorage.removeItem("paired_user_id");
+      localStorage.removeItem("local_name");
+      localStorage.removeItem("local_email");
+      localStorage.removeItem("local_phone");
+      localStorage.removeItem("local_avatarId");
+      
       const currentUser = auth.currentUser;
       if (currentUser) {
         currentUserId = currentUser.uid;
@@ -1261,9 +1435,9 @@ function setupGoogleAuth() {
       }
 
       const currentUser = auth.currentUser;
-      if (currentUser) {
-        // Save old anon/active UID to merge it after sign-in completes
-        localStorage.setItem("old_anon_uid", currentUserId);
+      if (currentUser && currentUser.isAnonymous) {
+        // Save old anon UID to merge it after sign-in completes (do not save paired UID)
+        localStorage.setItem("old_anon_uid", currentUser.uid);
       }
 
       const provider = new firebase.auth.GoogleAuthProvider();
@@ -1325,6 +1499,11 @@ function setupGoogleAuth() {
       auth.signOut().then(() => {
         localStorage.removeItem("paired_user_id");
         localStorage.removeItem("old_anon_uid");
+        localStorage.removeItem("local_name");
+        localStorage.removeItem("local_email");
+        localStorage.removeItem("local_phone");
+        localStorage.removeItem("local_avatarId");
+        
         currentUserId = "anonymous_web_user";
         showToast("Oturum Kapatıldı 🚪", "Başarıyla çıkış yaptınız.", "success");
         logoutBtn.disabled = false;
@@ -1894,6 +2073,7 @@ function setupGardenActions() {
       Promise.all(uploadPromises).then((newImagesArray) => {
         // IF RE-SCANNING AN EXISTING PLANT
         if (activeRescanPlantId) {
+          saveUserRecord(currentUserId);
           const plantRef = db.collection("users").doc(currentUserId)
             .collection("plants").doc(plantId);
 
@@ -1977,6 +2157,7 @@ function setupGardenActions() {
 
           const primaryImageUrl = newImagesArray.length > 0 ? newImagesArray[0].full : "/monstera.png";
 
+          saveUserRecord(currentUserId);
           const plantRef = db.collection("users").doc(currentUserId)
             .collection("plants").doc(plantId);
 
